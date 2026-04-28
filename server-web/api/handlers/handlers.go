@@ -12,6 +12,7 @@ import (
 
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
+	"server-web/webhook"
 )
 
 type Handler struct {
@@ -126,6 +127,63 @@ func (h *Handler) Hosts(c *gin.Context) {
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data:   hosts,
+	})
+}
+
+func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, response{
+			Status: "error",
+			Error:  "redis is required for alert webhook handling",
+		})
+		return
+	}
+
+	var payload webhook.AlertmanagerWebhookRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, response{
+			Status: "error",
+			Error:  fmt.Sprintf("invalid alertmanager payload: %v", err),
+		})
+		return
+	}
+
+	for _, alert := range payload.Alerts {
+		if alert.Fingerprint == "" {
+			continue
+		}
+
+		switch alert.Status {
+		case "firing":
+			value, err := json.Marshal(alert)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response{
+					Status: "error",
+					Error:  fmt.Sprintf("marshal alert payload failed: %v", err),
+				})
+				return
+			}
+
+			if err := h.cacheClient.HSet(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint, value); err != nil {
+				c.JSON(http.StatusBadGateway, response{
+					Status: "error",
+					Error:  fmt.Sprintf("store active alert failed: %v", err),
+				})
+				return
+			}
+		case "resolved":
+			if err := h.cacheClient.HDel(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint); err != nil {
+				c.JSON(http.StatusBadGateway, response{
+					Status: "error",
+					Error:  fmt.Sprintf("delete active alert failed: %v", err),
+				})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusAccepted, response{
+		Status: "accepted",
 	})
 }
 

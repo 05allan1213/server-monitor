@@ -23,6 +23,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
 	router.GET("/api/v1/hosts", handler.Hosts)
+	router.POST("/api/v1/webhook/alertmanager", handler.AlertmanagerWebhook)
 
 	return router, nil
 }

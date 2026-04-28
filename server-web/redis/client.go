@@ -64,3 +64,19 @@ func (c *Client) Set(ctx context.Context, key string, value []byte, ttl time.Dur
 
 	return c.client.Set(ctx, key, value, ttl).Err()
 }
+
+func (c *Client) HSet(ctx context.Context, key, field string, value []byte) error {
+	if !c.Enabled() {
+		return nil
+	}
+
+	return c.client.HSet(ctx, key, field, value).Err()
+}
+
+func (c *Client) HDel(ctx context.Context, key string, fields ...string) error {
+	if !c.Enabled() {
+		return nil
+	}
+
+	return c.client.HDel(ctx, key, fields...).Err()
+}
