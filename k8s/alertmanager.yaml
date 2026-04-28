@@ -1,0 +1,79 @@
+# ============================================
+# AlertManager 配置与部署
+# ============================================
+# 当前阶段只先接通 Prometheus -> AlertManager
+# 暂不接入 server-web webhook
+# ============================================
+
+# ------------------------------------------
+# 1. AlertManager 配置（ConfigMap）
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    route:
+      group_by: ['alertname', 'instance']
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 4h
+      receiver: 'default'
+
+    receivers:
+      - name: 'default'
+
+---
+# ------------------------------------------
+# 2. AlertManager 部署（Deployment）
+# ------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:latest
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager/alertmanager.yml
+              subPath: alertmanager.yml
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+
+---
+# ------------------------------------------
+# 3. AlertManager 服务（Service）
+# ------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+      targetPort: 9093
+      nodePort: 30093
+  type: NodePort
