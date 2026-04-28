@@ -106,7 +106,7 @@ server-monitor/
 | ------------- | ------------ | -------- |
 | `DB_HOST`     | `127.0.0.1`  | MySQL 地址 |
 | `DB_PORT`     | `3306`       | MySQL 端口 |
-| `DB_USER`     | `xiu`        | 用户名      |
+| `DB_USER`     | `monody`        | 用户名      |
 | `DB_PASSWORD` | `12345678`   | 密码       |
 | `DB_NAME`     | `monitor_db` | 数据库名     |
 

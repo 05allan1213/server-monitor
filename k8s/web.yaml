@@ -1,9 +1,18 @@
+# ============================================
+# server-web 部署配置
+# ============================================
+# Web 展示服务：从 MySQL 读取监控数据，HTML 表格展示
+# ============================================
+
+# ------------------------------------------
+# Deployment - 部署控制器
+# ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: server-web
 spec:
-  replicas: 1
+  replicas: 1                       # 副本数
   selector:
     matchLabels:
       app: server-web
@@ -14,23 +23,26 @@ spec:
     spec:
       containers:
         - name: server-web
-          image: goproject-server-web:latest
-          imagePullPolicy: IfNotPresent
+          image: goproject-server-web:latest  # 镜像地址（需替换为实际镜像）
+          imagePullPolicy: IfNotPresent       # 镜像拉取策略
           ports:
-            - containerPort: 8080
+            - containerPort: 8080   # Web 服务端口
+          # 资源限制（用于 HPA 自动扩缩容）
           resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
+            requests:                # 最小资源请求
+              cpu: 50m               # 50 毫核
+              memory: 64Mi           # 64 MiB
+            limits:                  # 最大资源限制
+              cpu: 200m              # 200 毫核
+              memory: 128Mi          # 128 MiB
+          # 存活探针：检测容器是否存活
           livenessProbe:
             httpGet:
               path: /
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
+          # 就绪探针：检测容器是否就绪
           readinessProbe:
             httpGet:
               path: /
@@ -39,7 +51,8 @@ spec:
             periodSeconds: 5
           env:
             - name: TZ
-              value: Asia/Shanghai
+              value: Asia/Shanghai   # 时区设置
+            # 从 ConfigMap 读取数据库配置
             - name: DB_HOST
               valueFrom:
                 configMapKeyRef:
@@ -55,6 +68,7 @@ spec:
                 configMapKeyRef:
                   name: mysql-config
                   key: DB_NAME
+            # 从 Secret 读取数据库凭证
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -65,7 +79,11 @@ spec:
                 secretKeyRef:
                   name: mysql-secret
                   key: DB_PASSWORD
+
 ---
+# ------------------------------------------
+# Service - 服务发现
+# ------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
@@ -74,7 +92,7 @@ spec:
   selector:
     app: server-web
   ports:
-    - port: 8080
-      targetPort: 8080
-      nodePort: 30080
-  type: NodePort
+    - port: 8080                    # 服务端口
+      targetPort: 8080              # 容器端口
+      nodePort: 30080               # NodePort（外部访问端口）
+  type: NodePort                    # 服务类型：NodePort 允许外部访问

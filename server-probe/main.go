@@ -47,7 +47,7 @@ func main() {
 	// 1. 初始化数据库（从独立环境变量拼装DSN）
 	host := getEnv("DB_HOST", "127.0.0.1")
 	port := getEnv("DB_PORT", "3306")
-	user := getEnv("DB_USER", "xiu")
+	user := getEnv("DB_USER", "monody")
 	password := getEnv("DB_PASSWORD", "12345678")
 	dbname := getEnv("DB_NAME", "monitor_db")
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",

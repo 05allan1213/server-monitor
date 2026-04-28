@@ -32,7 +32,7 @@ var db *gorm.DB
 func initDB() {
 	host := getEnv("DB_HOST", "192.168.106.132")
 	port := getEnv("DB_PORT", "3306")
-	user := getEnv("DB_USER", "xiu")
+	user := getEnv("DB_USER", "monody")
 	password := getEnv("DB_PASSWORD", "12345678")
 	dbname := getEnv("DB_NAME", "monitor_db")
 

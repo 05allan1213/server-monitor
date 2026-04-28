@@ -1,9 +1,18 @@
+# ============================================
+# server-probe 部署配置
+# ============================================
+# 监控探针：采集 CPU/内存指标，写入 MySQL，暴露 Prometheus 指标
+# ============================================
+
+# ------------------------------------------
+# Deployment - 部署控制器
+# ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: server-probe
 spec:
-  replicas: 1
+  replicas: 1                       # 副本数
   selector:
     matchLabels:
       app: server-probe
@@ -14,26 +23,29 @@ spec:
     spec:
       containers:
         - name: server-probe
-          image: goproject-server-probe:v2
-          imagePullPolicy: IfNotPresent
+          image: goproject-server-probe:v2  # 镜像地址（需替换为实际镜像）
+          imagePullPolicy: IfNotPresent     # 镜像拉取策略：本地有则不拉取
           ports:
-            - containerPort: 9090
+            - containerPort: 9090   # Prometheus 指标端口
               name: metrics
+          # 存活探针：检测容器是否存活，失败则重启
           livenessProbe:
             httpGet:
               path: /metrics
               port: 9090
-            initialDelaySeconds: 10
-            periodSeconds: 10
+            initialDelaySeconds: 10  # 容器启动后 10 秒开始检测
+            periodSeconds: 10        # 每 10 秒检测一次
+          # 就绪探针：检测容器是否就绪，失败则从 Service 移除
           readinessProbe:
             httpGet:
               path: /metrics
               port: 9090
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            initialDelaySeconds: 5   # 容器启动后 5 秒开始检测
+            periodSeconds: 5         # 每 5 秒检测一次
           env:
             - name: TZ
-              value: Asia/Shanghai
+              value: Asia/Shanghai   # 时区设置
+            # 从 ConfigMap 读取数据库配置
             - name: DB_HOST
               valueFrom:
                 configMapKeyRef:
@@ -49,6 +61,7 @@ spec:
                 configMapKeyRef:
                   name: mysql-config
                   key: DB_NAME
+            # 从 Secret 读取数据库凭证
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -59,7 +72,11 @@ spec:
                 secretKeyRef:
                   name: mysql-secret
                   key: DB_PASSWORD
+
 ---
+# ------------------------------------------
+# Service - 服务发现
+# ------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
@@ -68,7 +85,7 @@ spec:
   selector:
     app: server-probe
   ports:
-    - port: 9090
-      targetPort: 9090
+    - port: 9090                    # 服务端口
+      targetPort: 9090              # 容器端口
       name: metrics
-  type: ClusterIP
+  type: ClusterIP                   # 服务类型：ClusterIP 仅集群内访问

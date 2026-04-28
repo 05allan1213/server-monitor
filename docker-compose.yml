@@ -1,44 +1,68 @@
+# ============================================
+# Docker Compose 编排配置
+# ============================================
+# 启动命令: docker-compose up -d
+# 停止命令: docker-compose down
+# 查看日志: docker-compose logs -f
+# ============================================
+
 services:
+  # ------------------------------------------
+  # MySQL 数据库
+  # ------------------------------------------
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_DATABASE: monitor_db
-      MYSQL_USER: xiu
-      MYSQL_PASSWORD: 12345678
+      MYSQL_ROOT_PASSWORD: root123      # root 用户密码
+      MYSQL_DATABASE: monitor_db        # 自动创建的数据库名
+      MYSQL_USER: monody                   # 普通用户名
+      MYSQL_PASSWORD: 12345678          # 普通用户密码
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql       # 数据持久化
     healthcheck:
+      # 健康检查：每 5 秒检查一次 MySQL 是否可用
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      interval: 5s                      # 检查间隔
+      timeout: 3s                       # 超时时间
+      retries: 10                       # 重试次数
 
+  # ------------------------------------------
+  # server-probe 监控探针
+  # ------------------------------------------
   server-probe:
-    build: ./server-probe
+    build: ./server-probe               # 使用本地 Dockerfile 构建
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: xiu
-      DB_PASSWORD: 12345678
-      DB_NAME: monitor_db
+      DB_HOST: mysql                    # 数据库主机（Docker 网络内使用服务名）
+      DB_PORT: "3306"                   # 数据库端口
+      DB_USER: monody                      # 数据库用户名
+      DB_PASSWORD: 12345678             # 数据库密码
+      DB_NAME: monitor_db               # 数据库名
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_healthy      # 等待 MySQL 健康检查通过后再启动
+    # 如需暴露 Prometheus 指标端口，取消下面注释
+    # ports:
+    #   - "9090:9090"
 
+  # ------------------------------------------
+  # server-web Web 展示服务
+  # ------------------------------------------
   server-web:
-    build: ./server-web
+    build: ./server-web                 # 使用本地 Dockerfile 构建
     ports:
-      - "8080:8080"
+      - "8080:8080"                     # 映射端口：主机:容器
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: xiu
-      DB_PASSWORD: 12345678
-      DB_NAME: monitor_db
+      DB_HOST: mysql                    # 数据库主机
+      DB_PORT: "3306"                   # 数据库端口
+      DB_USER: monody                      # 数据库用户名
+      DB_PASSWORD: 12345678             # 数据库密码
+      DB_NAME: monitor_db               # 数据库名
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_healthy      # 等待 MySQL 健康检查通过后再启动
 
+# ============================================
+# 数据卷定义
+# ============================================
 volumes:
-  mysql_data:
+  mysql_data:                           # MySQL 数据持久化卷

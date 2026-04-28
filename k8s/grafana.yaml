@@ -1,9 +1,18 @@
+# ============================================
+# Grafana 部署配置
+# ============================================
+# 可视化仪表盘：展示 Prometheus 指标
+# ============================================
+
+# ------------------------------------------
+# Deployment - 部署控制器
+# ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
 spec:
-  replicas: 1
+  replicas: 1                       # 副本数
   selector:
     matchLabels:
       app: grafana
@@ -14,10 +23,14 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:latest
+          image: grafana/grafana:latest  # Grafana 官方镜像
           ports:
-            - containerPort: 3000
+            - containerPort: 3000   # Grafana 默认端口
+
 ---
+# ------------------------------------------
+# Service - 服务发现
+# ------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
@@ -26,7 +39,7 @@ spec:
   selector:
     app: grafana
   ports:
-    - port: 3000
-      targetPort: 3000
-      nodePort: 30030
-  type: NodePort
+    - port: 3000                    # 服务端口
+      targetPort: 3000              # 容器端口
+      nodePort: 30030               # NodePort（外部访问端口）
+  type: NodePort                    # 服务类型：NodePort 允许外部访问
