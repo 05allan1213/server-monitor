@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -10,6 +11,9 @@ type Config struct {
 	ListenAddr     string
 	PrometheusURL  string
 	RequestTimeout time.Duration
+	ReadyTimeout   time.Duration
+	GinMode        string
+	TrustedProxies []string
 }
 
 func Load() Config {
@@ -17,6 +21,9 @@ func Load() Config {
 		ListenAddr:     getEnv("LISTEN_ADDR", ":8080"),
 		PrometheusURL:  getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
 		RequestTimeout: time.Duration(getEnvInt("REQUEST_TIMEOUT_SECONDS", 5)) * time.Second,
+		ReadyTimeout:   time.Duration(getEnvInt("READY_TIMEOUT_SECONDS", 3)) * time.Second,
+		GinMode:        getEnv("GIN_MODE", "debug"),
+		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
 	}
 }
 
@@ -38,4 +45,21 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getEnvList(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

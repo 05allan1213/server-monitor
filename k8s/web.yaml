@@ -1,7 +1,7 @@
 # ============================================
 # server-web 部署配置
 # ============================================
-# Web 展示服务：从 MySQL 读取监控数据，HTML 表格展示
+# Web API 服务：查询 Prometheus，提供监控接口
 # ============================================
 
 # ------------------------------------------
@@ -38,47 +38,26 @@ spec:
           # 存活探针：检测容器是否存活
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
           # 就绪探针：检测容器是否就绪
           readinessProbe:
             httpGet:
-              path: /
+              path: /readyz
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
           env:
             - name: TZ
               value: Asia/Shanghai   # 时区设置
-            # 从 ConfigMap 读取数据库配置
-            - name: DB_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: mysql-config
-                  key: DB_HOST
-            - name: DB_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: mysql-config
-                  key: DB_PORT
-            - name: DB_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: mysql-config
-                  key: DB_NAME
-            # 从 Secret 读取数据库凭证
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: mysql-secret
-                  key: DB_USER
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: mysql-secret
-                  key: DB_PASSWORD
+            - name: GIN_MODE
+              value: release
+            - name: PROMETHEUS_URL
+              value: http://prometheus:9090
+            - name: READY_TIMEOUT_SECONDS
+              value: "3"
 
 ---
 # ------------------------------------------
