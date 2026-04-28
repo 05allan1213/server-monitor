@@ -2,6 +2,7 @@ package rediscache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -29,6 +30,18 @@ func NewClient(addr, password string, db int) *Client {
 
 func (c *Client) Enabled() bool {
 	return c != nil && c.enabled && c.client != nil
+}
+
+func (c *Client) Ping(ctx context.Context) error {
+	if !c.Enabled() {
+		return nil
+	}
+
+	if err := c.client.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("redis ping failed: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {

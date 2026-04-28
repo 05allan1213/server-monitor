@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,13 +58,34 @@ func (h *Handler) Readyz(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.readyTimeout)
 	defer cancel()
 
+	dependencies := gin.H{
+		"prometheus": "ok",
+		"redis":      "disabled",
+	}
+
+	var errors []string
+
 	if err := h.promClient.Ready(ctx); err != nil {
+		dependencies["prometheus"] = "unreachable"
+		errors = append(errors, err.Error())
+	}
+
+	if h.cacheClient != nil && h.cacheClient.Enabled() {
+		if err := h.cacheClient.Ping(ctx); err != nil {
+			dependencies["redis"] = "unreachable"
+			errors = append(errors, err.Error())
+		} else {
+			dependencies["redis"] = "ok"
+		}
+	}
+
+	if len(errors) > 0 {
 		c.JSON(http.StatusServiceUnavailable, response{
 			Status: "error",
-			Error:  err.Error(),
+			Error:  fmt.Sprintf("readiness check failed: %s", strings.Join(errors, "; ")),
 			Data: gin.H{
-				"ready":      false,
-				"prometheus": "unreachable",
+				"ready":        false,
+				"dependencies": dependencies,
 			},
 		})
 		return
@@ -71,8 +94,8 @@ func (h *Handler) Readyz(c *gin.Context) {
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data: gin.H{
-			"ready":      true,
-			"prometheus": "ok",
+			"ready":        true,
+			"dependencies": dependencies,
 		},
 	})
 }
