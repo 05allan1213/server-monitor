@@ -5,14 +5,173 @@
 # ============================================
 
 # ------------------------------------------
-# Deployment - 部署控制器
+# 1. DataSource Provisioning
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+
+---
+# ------------------------------------------
+# 2. Dashboard Provider Provisioning
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-providers
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: server-monitor
+        orgId: 1
+        folder: Server Monitor
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+---
+# ------------------------------------------
+# 3. Dashboard JSON
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+data:
+  server-monitor-overview.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "server_monitor_cpu_usage_percent",
+              "legendFormat": "{{instance}}",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Usage",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "server_monitor_memory_usage_percent",
+              "legendFormat": "{{instance}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Usage",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": [
+        "server-monitor"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "Server Monitor Overview",
+      "uid": "server-monitor-overview",
+      "version": 1,
+      "weekStart": ""
+    }
+
+---
+# ------------------------------------------
+# 4. Deployment - 部署控制器
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
 spec:
-  replicas: 1                       # 副本数
+  replicas: 1
   selector:
     matchLabels:
       app: grafana
@@ -23,13 +182,30 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:latest  # Grafana 官方镜像
+          image: grafana/grafana:latest
           ports:
-            - containerPort: 3000   # Grafana 默认端口
+            - containerPort: 3000
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-providers
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-providers
+          configMap:
+            name: grafana-dashboard-providers
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
 
 ---
 # ------------------------------------------
-# Service - 服务发现
+# 5. Service - 服务发现
 # ------------------------------------------
 apiVersion: v1
 kind: Service
@@ -39,7 +215,7 @@ spec:
   selector:
     app: grafana
   ports:
-    - port: 3000                    # 服务端口
-      targetPort: 3000              # 容器端口
-      nodePort: 30030               # NodePort（外部访问端口）
-  type: NodePort                    # 服务类型：NodePort 允许外部访问
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30030
+  type: NodePort
