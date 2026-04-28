@@ -45,25 +45,43 @@ metadata:
 data:
   alerts.yml: |
     groups:
-      - name: server-probe-alerts
+      - name: host-alerts
         rules:
-          - alert: HighCPUUsage
+          - alert: HighCPU
             expr: server_monitor_cpu_usage_percent > 80
             for: 2m
             labels:
               severity: warning
             annotations:
               summary: "High CPU usage on {{ $labels.instance }}"
-              description: "CPU usage is above 80% for 2 minutes."
+              description: "CPU usage is {{ $value }}% (threshold: 80%)."
 
-          - alert: HighMemoryUsage
+          - alert: CriticalCPU
+            expr: server_monitor_cpu_usage_percent > 95
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Critical CPU usage on {{ $labels.instance }}"
+              description: "CPU usage is {{ $value }}% (threshold: 95%)."
+
+          - alert: HighMemory
             expr: server_monitor_memory_usage_percent > 85
             for: 2m
             labels:
               severity: warning
             annotations:
               summary: "High memory usage on {{ $labels.instance }}"
-              description: "Memory usage is above 85% for 2 minutes."
+              description: "Memory usage is {{ $value }}% (threshold: 85%)."
+
+          - alert: HostDown
+            expr: up{job="server-probe"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Host {{ $labels.instance }} is down"
+              description: "Prometheus cannot reach the probe on {{ $labels.instance }}."
 
 ---
 # ------------------------------------------
