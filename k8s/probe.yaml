@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-probe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server-probe
+  template:
+    metadata:
+      labels:
+        app: server-probe
+    spec:
+      containers:
+        - name: server-probe
+          image: goproject-server-probe:v2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9090
+              name: metrics
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: DB_PASSWORD
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-probe
+spec:
+  selector:
+    app: server-probe
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: metrics
+  type: ClusterIP
