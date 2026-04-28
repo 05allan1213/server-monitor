@@ -12,8 +12,12 @@ type Config struct {
 	PrometheusURL  string
 	RequestTimeout time.Duration
 	ReadyTimeout   time.Duration
+	HostsCacheTTL  time.Duration
 	GinMode        string
 	TrustedProxies []string
+	RedisAddr      string
+	RedisPassword  string
+	RedisDB        int
 }
 
 func Load() Config {
@@ -22,8 +26,12 @@ func Load() Config {
 		PrometheusURL:  getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
 		RequestTimeout: time.Duration(getEnvInt("REQUEST_TIMEOUT_SECONDS", 5)) * time.Second,
 		ReadyTimeout:   time.Duration(getEnvInt("READY_TIMEOUT_SECONDS", 3)) * time.Second,
+		HostsCacheTTL:  time.Duration(getEnvInt("HOSTS_CACHE_TTL_SECONDS", 30)) * time.Second,
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
+		RedisAddr:      getEnv("REDIS_ADDR", ""),
+		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
+		RedisDB:        getEnvInt("REDIS_DB", 0),
 	}
 }
 

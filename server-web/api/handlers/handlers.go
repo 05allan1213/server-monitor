@@ -2,17 +2,21 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	promclient "server-web/prometheus"
+	rediscache "server-web/redis"
 )
 
 type Handler struct {
 	promClient   *promclient.Client
+	cacheClient  *rediscache.Client
 	readyTimeout time.Duration
+	hostsTTL     time.Duration
 }
 
 type response struct {
@@ -21,10 +25,12 @@ type response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
-func NewHandler(promClient *promclient.Client, readyTimeout time.Duration) *Handler {
+func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, hostsTTL time.Duration) *Handler {
 	return &Handler{
 		promClient:   promClient,
+		cacheClient:  cacheClient,
 		readyTimeout: readyTimeout,
+		hostsTTL:     hostsTTL,
 	}
 }
 
@@ -75,6 +81,14 @@ func (h *Handler) Hosts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
+	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
+		c.JSON(http.StatusOK, response{
+			Status: "success",
+			Data:   cachedHosts,
+		})
+		return
+	}
+
 	hosts, err := h.promClient.GetHosts(ctx)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
@@ -84,8 +98,41 @@ func (h *Handler) Hosts(c *gin.Context) {
 		return
 	}
 
+	h.cacheHosts(ctx, hosts)
+
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data:   hosts,
 	})
+}
+
+func (h *Handler) getCachedHosts(ctx context.Context) ([]promclient.Host, bool) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		return nil, false
+	}
+
+	value, ok := h.cacheClient.Get(ctx, rediscache.HostsListKey)
+	if !ok {
+		return nil, false
+	}
+
+	var hosts []promclient.Host
+	if err := json.Unmarshal(value, &hosts); err != nil {
+		return nil, false
+	}
+
+	return hosts, true
+}
+
+func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		return
+	}
+
+	value, err := json.Marshal(hosts)
+	if err != nil {
+		return
+	}
+
+	_ = h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL)
 }

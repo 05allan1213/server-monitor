@@ -8,6 +8,7 @@ import (
 	"server-web/api"
 	"server-web/config"
 	promclient "server-web/prometheus"
+	rediscache "server-web/redis"
 )
 
 func main() {
@@ -15,8 +16,9 @@ func main() {
 	gin.SetMode(cfg.GinMode)
 
 	prometheusClient := promclient.NewClient(cfg.PrometheusURL, cfg.RequestTimeout)
+	redisClient := rediscache.NewClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 
-	router, err := api.NewRouter(cfg, prometheusClient)
+	router, err := api.NewRouter(cfg, prometheusClient, redisClient)
 	if err != nil {
 		log.Fatalf("create router failed: %v", err)
 	}

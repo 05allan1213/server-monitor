@@ -6,9 +6,10 @@ import (
 	"server-web/api/handlers"
 	"server-web/config"
 	promclient "server-web/prometheus"
+	rediscache "server-web/redis"
 )
 
-func NewRouter(cfg config.Config, promClient *promclient.Client) (*gin.Engine, error) {
+func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client) (*gin.Engine, error) {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
@@ -16,7 +17,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client) (*gin.Engine, e
 		return nil, err
 	}
 
-	handler := handlers.NewHandler(promClient, cfg.ReadyTimeout)
+	handler := handlers.NewHandler(promClient, cacheClient, cfg.ReadyTimeout, cfg.HostsCacheTTL)
 
 	router.GET("/", handler.Root)
 	router.GET("/healthz", handler.Healthz)
