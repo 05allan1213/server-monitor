@@ -80,3 +80,16 @@ func (c *Client) HDel(ctx context.Context, key string, fields ...string) error {
 
 	return c.client.HDel(ctx, key, fields...).Err()
 }
+
+func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	if !c.Enabled() {
+		return map[string]string{}, nil
+	}
+
+	result, err := c.client.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

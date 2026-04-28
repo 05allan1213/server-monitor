@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -184,6 +185,47 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, response{
 		Status: "accepted",
+	})
+}
+
+func (h *Handler) ActiveAlerts(c *gin.Context) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, response{
+			Status: "error",
+			Error:  "redis is required for active alerts query",
+		})
+		return
+	}
+
+	values, err := h.cacheClient.HGetAll(c.Request.Context(), rediscache.ActiveAlertsKey)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("load active alerts failed: %v", err),
+		})
+		return
+	}
+
+	alerts := make([]webhook.AlertRecord, 0, len(values))
+	for _, value := range values {
+		var alert webhook.AlertRecord
+		if err := json.Unmarshal([]byte(value), &alert); err != nil {
+			c.JSON(http.StatusInternalServerError, response{
+				Status: "error",
+				Error:  fmt.Sprintf("decode active alert failed: %v", err),
+			})
+			return
+		}
+		alerts = append(alerts, alert)
+	}
+
+	sort.Slice(alerts, func(i, j int) bool {
+		return alerts[i].StartsAt.After(alerts[j].StartsAt)
+	})
+
+	c.JSON(http.StatusOK, response{
+		Status: "success",
+		Data:   alerts,
 	})
 }
 
