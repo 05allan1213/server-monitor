@@ -49,5 +49,6 @@ probe
 web
 
 # AI file
-AGMENTS.md
-design.md
+.codex
+AGENTS.md
+docs/

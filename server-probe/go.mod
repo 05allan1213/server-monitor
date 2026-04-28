@@ -3,13 +3,11 @@ module server-probe
 go 1.26
 
 require (
-	github.com/go-sql-driver/mysql v1.9.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/shirou/gopsutil/v3 v3.24.5
 )
 
 require (
-	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
