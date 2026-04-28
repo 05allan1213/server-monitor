@@ -16,45 +16,53 @@ metadata:
   name: prometheus-config
 data:
   prometheus.yml: |
-    # 全局配置
     global:
-      scrape_interval: 5s          # 每 5 秒抓取一次指标
+      scrape_interval: 5s
+      evaluation_interval: 5s
 
-    # ============================================
-    # Prometheus Scrape 配置说明
-    # ============================================
-    # scrape_configs 定义了 Prometheus 从哪些目标抓取指标
-    # 
-    # 常用配置项：
-    # - job_name: 任务名称，用于标识抓取目标
-    # - scrape_interval: 抓取间隔（可覆盖全局配置）
-    # - metrics_path: 指标路径（默认 /metrics）
-    # - static_configs: 静态目标配置
-    #   - targets: 目标地址列表（格式：host:port）
-    #   - labels: 自定义标签
-    #
-    # 示例：抓取多个目标
-    # scrape_configs:
-    #   - job_name: 'my-app'
-    #     static_configs:
-    #       - targets: ['app1:9090', 'app2:9090']
-    #         labels:
-    #           env: production
-    #
-    # 示例：使用服务发现（Kubernetes）
-    # scrape_configs:
-    #   - job_name: 'kubernetes-pods'
-    #     kubernetes_sd_configs:
-    #       - role: pod
-    # ============================================
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
     scrape_configs:
-      - job_name: 'server-probe'   # 任务名称
+      - job_name: 'server-probe'
+        metrics_path: /metrics
         static_configs:
-          - targets: ['server-probe:9090']  # 抓取目标：server-probe 服务的 9090 端口
+          - targets: ['server-probe:9090']
 
 ---
 # ------------------------------------------
-# 2. Prometheus 部署（Deployment）
+# 2. Prometheus 规则配置（ConfigMap）
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+data:
+  alerts.yml: |
+    groups:
+      - name: server-probe-alerts
+        rules:
+          - alert: HighCPUUsage
+            expr: server_monitor_cpu_usage_percent > 80
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on {{ $labels.instance }}"
+              description: "CPU usage is above 80% for 2 minutes."
+
+          - alert: HighMemoryUsage
+            expr: server_monitor_memory_usage_percent > 85
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on {{ $labels.instance }}"
+              description: "Memory usage is above 85% for 2 minutes."
+
+---
+# ------------------------------------------
+# 3. Prometheus 部署（Deployment）
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -72,21 +80,26 @@ spec:
     spec:
       containers:
         - name: prometheus
-          image: prom/prometheus:latest  # Prometheus 官方镜像
+          image: prom/prometheus:latest
           ports:
-            - containerPort: 9090   # Prometheus 默认端口
+            - containerPort: 9090
           volumeMounts:
             - name: config
-              mountPath: /etc/prometheus/prometheus.yml  # 挂载配置文件
+              mountPath: /etc/prometheus/prometheus.yml
               subPath: prometheus.yml
+            - name: rules
+              mountPath: /etc/prometheus/rules
       volumes:
         - name: config
           configMap:
-            name: prometheus-config  # 引用上面的 ConfigMap
+            name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
 
 ---
 # ------------------------------------------
-# 3. Prometheus 服务（Service）
+# 4. Prometheus 服务（Service）
 # ------------------------------------------
 apiVersion: v1
 kind: Service
@@ -96,7 +109,7 @@ spec:
   selector:
     app: prometheus
   ports:
-    - port: 9090                    # 服务端口
-      targetPort: 9090              # 容器端口
-      nodePort: 30090               # NodePort（外部访问端口，范围 30000-32767）
-  type: NodePort                    # 服务类型：NodePort 允许外部访问
+    - port: 9090
+      targetPort: 9090
+      nodePort: 30090
+  type: NodePort
