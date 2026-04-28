@@ -21,7 +21,7 @@ jobs:
         with:
           context: ./server-probe
           push: true
-          tags: monody/server-probe:latest
+          tags: 05allan1213/server-probe:latest
 
   build-web:
     runs-on: ubuntu-latest
