@@ -151,6 +151,8 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
+	receivedAt := time.Now().UTC()
+
 	for _, alert := range payload.Alerts {
 		if alert.Fingerprint == "" {
 			continue
@@ -182,6 +184,23 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 				})
 				return
 			}
+		}
+
+		event, err := json.Marshal(webhook.NewAlertEvent(alert, receivedAt))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, response{
+				Status: "error",
+				Error:  fmt.Sprintf("marshal alert event failed: %v", err),
+			})
+			return
+		}
+
+		if err := h.cacheClient.LPushTrim(ctx, rediscache.AlertEventsKey, rediscache.AlertEventsMax, event); err != nil {
+			c.JSON(http.StatusBadGateway, response{
+				Status: "error",
+				Error:  fmt.Sprintf("store alert event failed: %v", err),
+			})
+			return
 		}
 
 		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, message); err != nil {

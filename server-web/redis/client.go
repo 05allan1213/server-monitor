@@ -90,6 +90,22 @@ func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, er
 	return c.client.HGetAll(ctx, key).Result()
 }
 
+func (c *Client) LPushTrim(ctx context.Context, key string, maxLen int64, value []byte) error {
+	if !c.Enabled() {
+		return errors.New("redis is not enabled")
+	}
+	if maxLen <= 0 {
+		return errors.New("max list length must be positive")
+	}
+
+	pipe := c.client.TxPipeline()
+	pipe.LPush(ctx, key, value)
+	pipe.LTrim(ctx, key, 0, maxLen-1)
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 func (c *Client) Publish(ctx context.Context, channel string, message []byte) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")
