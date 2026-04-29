@@ -34,23 +34,23 @@ run-web:
 
 docker:
 	@echo "构建 Docker 镜像..."
-	docker-compose build
+	docker compose build
 
 docker-up:
 	@echo "启动 Docker Compose..."
-	docker-compose up -d
+	docker compose up -d
 	@echo "服务已启动，访问 http://localhost:8080"
 
 docker-down:
 	@echo "停止 Docker Compose..."
-	docker-compose down
+	docker compose down
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 docker-clean:
 	@echo "清理 Docker 资源..."
-	docker-compose down -v
+	docker compose down -v
 	@echo "清理完成"
 
 # ============================================
