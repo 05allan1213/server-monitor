@@ -2,12 +2,21 @@ import type { Host, ApiResponse } from "../types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
-export async function fetchHosts(): Promise<Host[]> {
+export interface HostsQuery {
+  status?: "all" | "up" | "down";
+}
+
+export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/v1/hosts`, {
+    const url = new URL(`${apiBaseUrl}/api/v1/hosts`, window.location.origin);
+    if (query.status && query.status !== "all") {
+      url.searchParams.set("status", query.status);
+    }
+
+    const response = await fetch(url.toString(), {
       signal: controller.signal,
     });
 

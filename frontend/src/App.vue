@@ -47,10 +47,21 @@ const infoCount = computed(
       .length,
 );
 const alertEventsLimit = 8;
+const selectedHostStatus = ref<"all" | "up" | "down">("all");
 const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
 const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
 const latestAlertEvents = computed(() => alertEvents.value.slice(0, alertEventsLimit));
+const hostCountLabel = computed(() => {
+  switch (selectedHostStatus.value) {
+    case "up":
+      return "在线主机";
+    case "down":
+      return "离线主机";
+    default:
+      return "当前主机";
+  }
+});
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -126,6 +137,11 @@ function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
   loadAlerts();
 }
 
+function setHostStatusFilter(value: "all" | "up" | "down") {
+  selectedHostStatus.value = value;
+  loadHosts();
+}
+
 function setEventStatusFilter(value: "all" | "firing" | "resolved") {
   selectedEventStatus.value = value;
   loadAlertEvents();
@@ -166,7 +182,9 @@ async function loadAlertEvents() {
 
 async function loadHosts() {
   try {
-    const data = await fetchHosts();
+    const data = await fetchHosts({
+      status: selectedHostStatus.value,
+    });
     hosts.value = data;
   } catch (err) {
     console.error("loadHosts failed:", err);
@@ -223,7 +241,12 @@ function applyIncomingAlert(event: AlertEvent) {
 }
 
 function applyIncomingHosts(newHosts: Host[]) {
-  hosts.value = newHosts;
+  if (selectedHostStatus.value === "all") {
+    hosts.value = newHosts;
+  } else {
+    const shouldBeUp = selectedHostStatus.value === "up";
+    hosts.value = newHosts.filter((host) => isHostUp(host.status) === shouldBeUp);
+  }
   lastUpdateTime.value = Date.now();
 }
 
@@ -422,7 +445,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="stat-info">
           <span class="stat-value">{{ hosts.length }}</span>
-          <span class="stat-label">在线主机</span>
+          <span class="stat-label">{{ hostCountLabel }}</span>
         </div>
       </div>
       <div class="stat-card">
@@ -562,7 +585,35 @@ onBeforeUnmount(() => {
           </svg>
           <h2>主机指标</h2>
         </div>
-        <span class="panel-badge">WebSocket 实时推送</span>
+        <div class="panel-actions">
+          <div class="filter-group">
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostStatus === 'all' }"
+              @click="setHostStatusFilter('all')"
+            >
+              全部
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostStatus === 'up' }"
+              @click="setHostStatusFilter('up')"
+            >
+              在线
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostStatus === 'down' }"
+              @click="setHostStatusFilter('down')"
+            >
+              离线
+            </button>
+          </div>
+          <span class="panel-badge">WebSocket 实时推送</span>
+        </div>
       </div>
 
       <!-- Skeleton Loading -->
@@ -599,8 +650,16 @@ onBeforeUnmount(() => {
             <rect x="2" y="14" width="20" height="8" rx="2" />
           </svg>
         </div>
-        <p>暂无主机数据</p>
-        <p class="empty-sub">Prometheus 尚未发现任何主机</p>
+        <p>{{ selectedHostStatus === "all" ? "暂无主机数据" : "当前筛选条件下没有主机" }}</p>
+        <p class="empty-sub">
+          {{
+            selectedHostStatus === "all"
+              ? "Prometheus 尚未发现任何主机"
+              : selectedHostStatus === "up"
+                ? "当前没有在线主机"
+                : "当前没有离线主机"
+          }}
+        </p>
       </div>
       <div v-else class="hosts-grid">
         <div v-for="host in hosts" :key="host.instance" class="host-card">

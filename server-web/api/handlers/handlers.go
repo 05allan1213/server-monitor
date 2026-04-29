@@ -66,6 +66,11 @@ var validActiveAlertSeverities = map[string]struct{}{
 	"info":     {},
 }
 
+var validHostStatuses = map[string]struct{}{
+	"up":   {},
+	"down": {},
+}
+
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
@@ -136,10 +141,12 @@ func (h *Handler) Hosts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
+	statusFilter := parseAlertEventFilter(c.Query("status"), validHostStatuses)
+
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
 		c.JSON(http.StatusOK, response{
 			Status: "success",
-			Data:   cachedHosts,
+			Data:   filterHostsByStatus(cachedHosts, statusFilter),
 		})
 		return
 	}
@@ -159,7 +166,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   hosts,
+		Data:   filterHostsByStatus(hosts, statusFilter),
 	})
 }
 
@@ -448,6 +455,26 @@ func filterActiveAlerts(alerts []webhook.AlertRecord, severityFilter string) []w
 			continue
 		}
 		filtered = append(filtered, alert)
+	}
+
+	return filtered
+}
+
+func filterHostsByStatus(hosts []promclient.Host, statusFilter string) []promclient.Host {
+	if statusFilter == "" {
+		return hosts
+	}
+
+	filtered := make([]promclient.Host, 0, len(hosts))
+	for _, host := range hosts {
+		isUp := host.Status == "up" || host.Status == "healthy"
+		if statusFilter == "up" && isUp {
+			filtered = append(filtered, host)
+			continue
+		}
+		if statusFilter == "down" && !isUp {
+			filtered = append(filtered, host)
+		}
 	}
 
 	return filtered
