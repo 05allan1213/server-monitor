@@ -167,13 +167,6 @@ async function refreshAll() {
   }
 }
 
-function toAlertEvent(alert: AlertRecord): AlertEvent {
-  return {
-    ...alert,
-    receivedAt: new Date().toISOString(),
-  };
-}
-
 function pushAlertEvent(event: AlertEvent) {
   alertEvents.value.unshift(event);
   if (alertEvents.value.length > 200) {
@@ -181,8 +174,18 @@ function pushAlertEvent(event: AlertEvent) {
   }
 }
 
-function applyIncomingAlert(alert: AlertRecord) {
-  pushAlertEvent(toAlertEvent(alert));
+function applyIncomingAlert(event: AlertEvent) {
+  pushAlertEvent(event);
+
+  const alert: AlertRecord = {
+    status: event.status,
+    fingerprint: event.fingerprint,
+    labels: event.labels,
+    annotations: event.annotations,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    generatorURL: event.generatorURL,
+  };
 
   const idx = alerts.value.findIndex(
     (a) => a.fingerprint === alert.fingerprint,

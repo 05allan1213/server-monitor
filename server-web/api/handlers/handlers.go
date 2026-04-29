@@ -216,7 +216,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			return
 		}
 
-		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, message); err != nil {
+		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, event); err != nil {
 			// Active state and history are already stored; failing the webhook here
 			// would trigger retries and duplicate history entries.
 			slog.Warn("publish alert event failed", "fingerprint", alert.Fingerprint, "status", alert.Status, "error", err)

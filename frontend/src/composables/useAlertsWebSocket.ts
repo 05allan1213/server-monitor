@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from "vue";
 
-import type { AlertRecord, Host } from "../types";
+import type { AlertEvent, AlertRecord, Host } from "../types";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
@@ -15,13 +15,14 @@ function buildWebSocketUrl() {
   return `${protocol}//${window.location.host}/ws/alerts`;
 }
 
-function isValidAlertRecord(data: unknown): data is AlertRecord {
+function isValidAlertEvent(data: unknown): data is AlertEvent {
   if (!data || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
   return (
     typeof record.fingerprint === "string" &&
     typeof record.status === "string" &&
     (record.status === "firing" || record.status === "resolved") &&
+    typeof record.receivedAt === "string" &&
     typeof record.labels === "object" && record.labels !== null &&
     typeof record.annotations === "object" && record.annotations !== null
   );
@@ -46,7 +47,7 @@ function isValidHostsMessage(data: unknown): data is { type: "hosts"; data: Host
 }
 
 export function useAlertsWebSocket(
-  onAlert: (alert: AlertRecord) => void,
+  onAlert: (alert: AlertEvent) => void,
   onHosts?: (hosts: Host[]) => void,
 ) {
   const connectionState = ref<ConnectionState>("disconnected");
@@ -96,7 +97,7 @@ export function useAlertsWebSocket(
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (isValidAlertRecord(payload)) {
+        if (isValidAlertEvent(payload)) {
           onAlert(payload);
         } else if (isValidHostsMessage(payload) && onHosts) {
           onHosts(payload.data);
