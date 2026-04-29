@@ -66,6 +66,40 @@ const hostCountLabel = computed(() => {
       return "当前主机";
   }
 });
+const hostFilterSummary = computed(() => {
+  const parts: string[] = [];
+
+  if (selectedHostStatus.value === "up") {
+    parts.push("在线");
+  } else if (selectedHostStatus.value === "down") {
+    parts.push("离线");
+  }
+
+  if (appliedHostQuery.value) {
+    parts.push(`搜索: ${appliedHostQuery.value}`);
+  }
+
+  switch (selectedHostSort.value) {
+    case "cpu_desc":
+      parts.push("按 CPU 排序");
+      break;
+    case "memory_desc":
+      parts.push("按内存排序");
+      break;
+  }
+
+  switch (selectedHostRisk.value) {
+    case "high_cpu":
+      parts.push("高 CPU");
+      break;
+    case "high_memory":
+      parts.push("高内存");
+      break;
+  }
+
+  return parts;
+});
+const hasActiveHostFilters = computed(() => hostFilterSummary.value.length > 0);
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -268,6 +302,15 @@ function setHostRisk(value: "all" | "high_cpu" | "high_memory") {
 
 function applyHostSearch() {
   appliedHostQuery.value = hostSearchInput.value.trim().toLowerCase();
+  loadHosts();
+}
+
+function resetHostFilters() {
+  hostSearchInput.value = "";
+  appliedHostQuery.value = "";
+  selectedHostStatus.value = "all";
+  selectedHostSort.value = "instance";
+  selectedHostRisk.value = "all";
   loadHosts();
 }
 
@@ -808,8 +851,27 @@ onBeforeUnmount(() => {
               高内存
             </button>
           </div>
+          <button
+            v-if="hasActiveHostFilters"
+            type="button"
+            class="reset-btn"
+            @click="resetHostFilters"
+          >
+            重置
+          </button>
           <span class="panel-badge">WebSocket 实时推送</span>
         </div>
+      </div>
+
+      <div v-if="hasActiveHostFilters" class="host-summary">
+        <span class="host-summary-label">当前条件</span>
+        <span
+          v-for="item in hostFilterSummary"
+          :key="item"
+          class="host-summary-chip"
+        >
+          {{ item }}
+        </span>
       </div>
 
       <!-- Skeleton Loading -->
@@ -1625,6 +1687,47 @@ onBeforeUnmount(() => {
 .panel-actions-wrap {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.reset-btn {
+  padding: 0.38rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.reset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.host-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: -0.25rem 0 1rem;
+}
+
+.host-summary-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.host-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .search-form {
