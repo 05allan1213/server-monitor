@@ -124,6 +124,70 @@ function memoryColor(value: number): string {
   return "var(--success)";
 }
 
+function isHighCPU(host: Host): boolean {
+  return host.cpu >= 80;
+}
+
+function isHighMemory(host: Host): boolean {
+  return host.memory >= 85;
+}
+
+function hostRiskVariant(host: Host): "normal" | "cpu" | "memory" | "both" {
+  const highCPU = isHighCPU(host);
+  const highMemory = isHighMemory(host);
+
+  if (highCPU && highMemory) {
+    return "both";
+  }
+  if (highCPU) {
+    return "cpu";
+  }
+  if (highMemory) {
+    return "memory";
+  }
+
+  return "normal";
+}
+
+function hostRiskClass(host: Host): string {
+  switch (hostRiskVariant(host)) {
+    case "cpu":
+      return "host-risk-cpu";
+    case "memory":
+      return "host-risk-memory";
+    case "both":
+      return "host-risk-both";
+    default:
+      return "";
+  }
+}
+
+function hostRiskLabel(host: Host): string {
+  switch (hostRiskVariant(host)) {
+    case "cpu":
+      return "高 CPU";
+    case "memory":
+      return "高内存";
+    case "both":
+      return "双高风险";
+    default:
+      return "正常";
+  }
+}
+
+function hostRiskHint(host: Host): string {
+  switch (hostRiskVariant(host)) {
+    case "cpu":
+      return "CPU 已达到高风险阈值";
+    case "memory":
+      return "内存已达到高风险阈值";
+    case "both":
+      return "CPU 与内存都已达到高风险阈值";
+    default:
+      return "主机状态正常";
+  }
+}
+
 function isHostUp(status: string): boolean {
   return status === "up" || status === "healthy";
 }
@@ -808,7 +872,12 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div v-else class="hosts-grid">
-        <div v-for="host in hosts" :key="host.instance" class="host-card">
+        <div
+          v-for="host in hosts"
+          :key="host.instance"
+          class="host-card"
+          :class="hostRiskClass(host)"
+        >
           <div class="host-header">
             <div class="host-name-row">
               <span
@@ -822,6 +891,18 @@ onBeforeUnmount(() => {
               :class="isHostUp(host.status) ? 'status-up' : 'status-down'"
             >
               {{ isHostUp(host.status) ? "在线" : "离线" }}
+            </span>
+          </div>
+          <div
+            v-if="hostRiskVariant(host) !== 'normal'"
+            class="host-risk-strip"
+            :class="hostRiskClass(host)"
+          >
+            <span class="host-risk-badge" :class="hostRiskClass(host)">
+              {{ hostRiskLabel(host) }}
+            </span>
+            <span class="host-risk-text">
+              {{ hostRiskHint(host) }}
             </span>
           </div>
           <div class="host-metrics">
@@ -1684,6 +1765,28 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-md);
 }
 
+.host-card.host-risk-cpu {
+  border-color: rgba(245, 158, 11, 0.35);
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.06), transparent 42%),
+    var(--bg-secondary);
+}
+
+.host-card.host-risk-memory {
+  border-color: rgba(6, 182, 212, 0.35);
+  background:
+    linear-gradient(180deg, rgba(6, 182, 212, 0.06), transparent 42%),
+    var(--bg-secondary);
+}
+
+.host-card.host-risk-both {
+  border-color: rgba(239, 68, 68, 0.42);
+  background:
+    linear-gradient(180deg, rgba(239, 68, 68, 0.08), transparent 45%),
+    var(--bg-secondary);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.08);
+}
+
 .host-header {
   display: flex;
   justify-content: space-between;
@@ -1734,6 +1837,48 @@ onBeforeUnmount(() => {
 .status-down {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.host-risk-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.host-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.host-risk-badge.host-risk-cpu {
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.host-risk-badge.host-risk-memory {
+  color: var(--info);
+  background: rgba(6, 182, 212, 0.12);
+  border-color: rgba(6, 182, 212, 0.22);
+}
+
+.host-risk-badge.host-risk-both {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.24);
+}
+
+.host-risk-text {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
 }
 
 .host-metrics {
