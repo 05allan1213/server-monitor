@@ -127,7 +127,11 @@ func (c *Client) Subscribe(ctx context.Context, channel string) (<-chan string, 
 				if !ok {
 					return
 				}
-				output <- message.Payload
+				select {
+				case <-ctx.Done():
+					return
+				case output <- message.Payload:
+				}
 			}
 		}
 	}()
