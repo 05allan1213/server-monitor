@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -48,6 +49,8 @@ func main() {
 		}
 	}()
 
+	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout)
+
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub)
 	if err != nil {
 		slog.Error("create router failed", "error", err)
@@ -82,4 +85,35 @@ func main() {
 	}
 
 	slog.Info("server-web stopped")
+}
+
+func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.Hub, timeout time.Duration) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			queryCtx, cancel := context.WithTimeout(ctx, timeout)
+			hosts, err := promClient.GetHosts(queryCtx)
+			cancel()
+			if err != nil {
+				slog.Warn("broadcast hosts query failed", "error", err)
+				continue
+			}
+
+			payload, err := json.Marshal(map[string]interface{}{
+				"type": "hosts",
+				"data": hosts,
+			})
+			if err != nil {
+				slog.Warn("broadcast hosts marshal failed", "error", err)
+				continue
+			}
+
+			hub.Broadcast(payload)
+		}
+	}
 }

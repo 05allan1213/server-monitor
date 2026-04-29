@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from "vue";
 
-import type { AlertRecord } from "../types";
+import type { AlertRecord, Host } from "../types";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
@@ -21,7 +21,16 @@ function isValidAlertRecord(data: unknown): data is AlertRecord {
   return typeof record.fingerprint === "string" && typeof record.status === "string";
 }
 
-export function useAlertsWebSocket(onAlert: (alert: AlertRecord) => void) {
+function isValidHostsMessage(data: unknown): data is { type: "hosts"; data: Host[] } {
+  if (!data || typeof data !== "object") return false;
+  const msg = data as Record<string, unknown>;
+  return msg.type === "hosts" && Array.isArray(msg.data);
+}
+
+export function useAlertsWebSocket(
+  onAlert: (alert: AlertRecord) => void,
+  onHosts?: (hosts: Host[]) => void,
+) {
   const connectionState = ref<ConnectionState>("disconnected");
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
@@ -71,11 +80,13 @@ export function useAlertsWebSocket(onAlert: (alert: AlertRecord) => void) {
         const payload = JSON.parse(event.data);
         if (isValidAlertRecord(payload)) {
           onAlert(payload);
+        } else if (isValidHostsMessage(payload) && onHosts) {
+          onHosts(payload.data);
         } else {
-          console.error("Invalid alert record from websocket", payload);
+          console.warn("Unknown websocket message", payload);
         }
       } catch (error) {
-        console.error("Failed to parse alert websocket message", error);
+        console.error("Failed to parse websocket message", error);
       }
     };
 

@@ -8,6 +8,14 @@ export interface AlertRecord {
   generatorURL?: string;
 }
 
+export interface Host {
+  instance: string;
+  cpu: number;
+  memory: number;
+  status: string;
+  lastScrape: string;
+}
+
 export interface ApiResponse<T> {
   status: string;
   data?: T;
