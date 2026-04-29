@@ -50,13 +50,6 @@ const alertEventsLimit = 8;
 const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
 const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
-const filteredAlerts = computed(() => {
-  if (selectedSeverity.value === "all") return alerts.value;
-  return alerts.value.filter(
-    (a) => (a.labels.severity ?? "info") === selectedSeverity.value,
-  );
-});
-
 const latestAlertEvents = computed(() => alertEvents.value.slice(0, alertEventsLimit));
 
 const connectionLabel = computed(() => {
@@ -130,6 +123,7 @@ function formatTime(iso: string): string {
 
 function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
   selectedSeverity.value = value;
+  loadAlerts();
 }
 
 function setEventStatusFilter(value: "all" | "firing" | "resolved") {
@@ -147,7 +141,9 @@ function setEventSeverityFilter(
 async function loadAlerts() {
   try {
     alertsError.value = "";
-    const data = await fetchActiveAlerts();
+    const data = await fetchActiveAlerts({
+      severity: selectedSeverity.value,
+    });
     alerts.value = data;
   } catch (err) {
     alertsError.value = err instanceof Error ? err.message : "加载告警失败";
@@ -790,13 +786,13 @@ onBeforeUnmount(() => {
         <p class="empty-sub">当前无活跃告警</p>
       </div>
 
-      <div v-else-if="filteredAlerts.length === 0" class="empty-state">
+      <div v-else-if="alerts.length === 0" class="empty-state">
         <p>该级别下无告警</p>
       </div>
 
       <div v-else class="alert-list">
         <div
-          v-for="alert in filteredAlerts"
+          v-for="alert in alerts"
           :key="alert.fingerprint"
           class="alert-card"
           :class="severityClass(alert.labels.severity)"

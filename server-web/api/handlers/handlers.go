@@ -60,6 +60,12 @@ var validAlertEventSeverities = map[string]struct{}{
 	"info":     {},
 }
 
+var validActiveAlertSeverities = map[string]struct{}{
+	"critical": {},
+	"warning":  {},
+	"info":     {},
+}
+
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
@@ -254,6 +260,8 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
+	severityFilter := parseAlertEventFilter(c.Query("severity"), validActiveAlertSeverities)
+
 	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
@@ -264,6 +272,7 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	}
 
 	alerts := decodeActiveAlerts(values)
+	alerts = filterActiveAlerts(alerts, severityFilter)
 
 	sort.Slice(alerts, func(i, j int) bool {
 		return alerts[i].StartsAt.After(alerts[j].StartsAt)
@@ -423,6 +432,22 @@ func filterAlertEvents(events []webhook.AlertEvent, statusFilter, severityFilter
 			continue
 		}
 		filtered = append(filtered, event)
+	}
+
+	return filtered
+}
+
+func filterActiveAlerts(alerts []webhook.AlertRecord, severityFilter string) []webhook.AlertRecord {
+	if severityFilter == "" {
+		return alerts
+	}
+
+	filtered := make([]webhook.AlertRecord, 0, len(alerts))
+	for _, alert := range alerts {
+		if alert.Labels["severity"] != severityFilter {
+			continue
+		}
+		filtered = append(filtered, alert)
 	}
 
 	return filtered

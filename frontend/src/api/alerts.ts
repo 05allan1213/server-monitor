@@ -8,14 +8,28 @@ export interface AlertEventsQuery {
   severity?: "critical" | "warning" | "info" | "all";
 }
 
-export async function fetchActiveAlerts(): Promise<AlertRecord[]> {
+export interface ActiveAlertsQuery {
+  severity?: "critical" | "warning" | "info" | "all";
+}
+
+export async function fetchActiveAlerts(
+  queryInput: ActiveAlertsQuery = {},
+): Promise<AlertRecord[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const query = new URLSearchParams();
+
+  if (queryInput.severity && queryInput.severity !== "all") {
+    query.set("severity", queryInput.severity);
+  }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/v1/alerts/active`, {
+    const response = await fetch(
+      `${apiBaseUrl}/api/v1/alerts/active${query.toString() ? `?${query.toString()}` : ""}`,
+      {
       signal: controller.signal,
-    });
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
