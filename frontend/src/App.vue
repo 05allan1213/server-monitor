@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 
-import { fetchActiveAlerts } from "./api/alerts";
+import { fetchActiveAlerts, fetchAlertEvents } from "./api/alerts";
 import { fetchHosts } from "./api/hosts";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
-import type { AlertRecord, Host } from "./types";
+import type { AlertEvent, AlertRecord, Host } from "./types";
 
 const alerts = ref<AlertRecord[]>([]);
+const alertEvents = ref<AlertEvent[]>([]);
 const hosts = ref<Host[]>([]);
 const loading = ref(true);
 const refreshing = ref(false);
@@ -44,6 +45,7 @@ const infoCount = computed(
     alerts.value.filter((a) => (a.labels.severity ?? "info") === "info")
       .length,
 );
+const latestAlertEvents = computed(() => alertEvents.value.slice(0, 8));
 
 const filteredAlerts = computed(() => {
   if (selectedSeverity.value === "all") return alerts.value;
@@ -135,6 +137,16 @@ async function loadAlerts() {
   }
 }
 
+async function loadAlertEvents() {
+  try {
+    error.value = "";
+    const data = await fetchAlertEvents();
+    alertEvents.value = data;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "加载事件失败";
+  }
+}
+
 async function loadHosts() {
   try {
     const data = await fetchHosts();
@@ -147,7 +159,7 @@ async function loadHosts() {
 async function refreshAll() {
   refreshing.value = true;
   try {
-    await Promise.all([loadAlerts(), loadHosts()]);
+    await Promise.all([loadAlerts(), loadAlertEvents(), loadHosts()]);
     lastUpdateTime.value = Date.now();
   } finally {
     loading.value = false;
@@ -155,7 +167,23 @@ async function refreshAll() {
   }
 }
 
+function toAlertEvent(alert: AlertRecord): AlertEvent {
+  return {
+    ...alert,
+    receivedAt: new Date().toISOString(),
+  };
+}
+
+function pushAlertEvent(event: AlertEvent) {
+  alertEvents.value.unshift(event);
+  if (alertEvents.value.length > 200) {
+    alertEvents.value.length = 200;
+  }
+}
+
 function applyIncomingAlert(alert: AlertRecord) {
+  pushAlertEvent(toAlertEvent(alert));
+
   const idx = alerts.value.findIndex(
     (a) => a.fingerprint === alert.fingerprint,
   );
@@ -189,6 +217,14 @@ function showToast(message: string, severity: string) {
     toasts.value = toasts.value.filter((t) => t.id !== id);
   }, 4000);
   toastTimers.push(timerId);
+}
+
+function eventStatusLabel(status: AlertEvent["status"]): string {
+  return status === "resolved" ? "恢复" : "触发";
+}
+
+function eventStatusClass(status: AlertEvent["status"]): string {
+  return status === "resolved" ? "event-status-resolved" : "event-status-firing";
 }
 
 function updateBeijingTime() {
@@ -392,6 +428,27 @@ onBeforeUnmount(() => {
         <div class="stat-info">
           <span class="stat-value">{{ alerts.length }}</span>
           <span class="stat-label">活跃告警</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: rgba(99, 102, 241, 0.12); color: #818cf8"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M3 12h4l3 8 4-16 3 8h4" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: #818cf8">{{ alertEvents.length }}</span>
+          <span class="stat-label">最近事件</span>
         </div>
       </div>
       <div class="stat-card">
@@ -749,6 +806,79 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            style="color: #818cf8"
+          >
+            <path d="M3 12h4l3 8 4-16 3 8h4" />
+          </svg>
+          <h2>最近事件</h2>
+        </div>
+        <span class="panel-badge event-badge">Webhook 历史流</span>
+      </div>
+
+      <div v-if="alertEvents.length === 0" class="empty-state">
+        <div class="empty-icon">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path d="M3 12h4l3 8 4-16 3 8h4" />
+          </svg>
+        </div>
+        <p>暂无最近事件</p>
+        <p class="empty-sub">新告警或恢复事件会在这里按时间倒序展示</p>
+      </div>
+
+      <div v-else class="event-list">
+        <div
+          v-for="event in latestAlertEvents"
+          :key="`${event.fingerprint}-${event.receivedAt}-${event.status}`"
+          class="event-card"
+          :class="severityClass(event.labels.severity)"
+        >
+          <div class="event-top">
+            <div class="event-top-left">
+              <span
+                class="alert-severity"
+                :class="severityClass(event.labels.severity)"
+              >
+                {{ severityLabel(event.labels.severity) }}
+              </span>
+              <span class="event-status" :class="eventStatusClass(event.status)">
+                {{ eventStatusLabel(event.status) }}
+              </span>
+            </div>
+            <span class="alert-time">{{ formatTime(event.receivedAt) }}</span>
+          </div>
+          <div class="event-body">
+            <div class="alert-name">
+              {{ event.labels.alertname || "未知事件" }}
+            </div>
+            <div class="alert-instance">
+              {{ event.labels.instance || "" }}
+            </div>
+            <p class="alert-summary">
+              {{ event.annotations.summary || event.annotations.description || "" }}
+            </p>
+            <p class="event-meta">开始时间 {{ formatTime(event.startsAt) }}</p>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -998,7 +1128,7 @@ onBeforeUnmount(() => {
 /* Stats Row */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -1089,6 +1219,12 @@ onBeforeUnmount(() => {
   padding: 0.2rem 0.6rem;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.event-badge {
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(129, 140, 248, 0.22);
 }
 
 .panel-actions {
@@ -1491,6 +1627,77 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin: 0.35rem 0 0;
+}
+
+.event-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.event-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.event-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.event-card.severity-critical {
+  border-left-color: var(--danger);
+}
+
+.event-card.severity-warning {
+  border-left-color: var(--warning);
+}
+
+.event-card.severity-info {
+  border-left-color: var(--info);
+}
+
+.event-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.event-top-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.event-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.55em;
+  border-radius: var(--radius-sm);
+}
+
+.event-status-firing {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.event-status-resolved {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.event-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.45rem;
 }
 
 /* Responsive */

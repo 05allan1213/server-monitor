@@ -8,6 +8,17 @@ export interface AlertRecord {
   generatorURL?: string;
 }
 
+export interface AlertEvent {
+  status: "firing" | "resolved";
+  fingerprint: string;
+  labels: Record<string, string>;
+  annotations: Record<string, string>;
+  startsAt: string;
+  endsAt: string;
+  generatorURL?: string;
+  receivedAt: string;
+}
+
 export interface Host {
   instance: string;
   cpu: number;
