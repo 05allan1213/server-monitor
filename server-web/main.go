@@ -20,6 +20,11 @@ import (
 	ws "server-web/websocket"
 )
 
+type wsMessage struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
+}
+
 func main() {
 	cfg := config.Load()
 	gin.SetMode(cfg.GinMode)
@@ -43,7 +48,9 @@ func main() {
 		go subscriber.Run(ctx)
 	}
 
+	alertHubConsumers := make(chan struct{})
 	go func() {
+		defer close(alertHubConsumers)
 		for message := range alertHub.Messages() {
 			websocketHub.Broadcast(message)
 		}
@@ -75,7 +82,6 @@ func main() {
 	<-quit
 
 	slog.Info("server-web shutting down...")
-	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
@@ -83,6 +89,10 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server-web shutdown error", "error", err)
 	}
+
+	cancel()
+	alertHub.Close()
+	<-alertHubConsumers
 
 	slog.Info("server-web stopped")
 }
@@ -104,10 +114,7 @@ func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.
 				continue
 			}
 
-			payload, err := json.Marshal(map[string]interface{}{
-				"type": "hosts",
-				"data": hosts,
-			})
+			payload, err := json.Marshal(wsMessage{Type: "hosts", Data: hosts})
 			if err != nil {
 				slog.Warn("broadcast hosts marshal failed", "error", err)
 				continue

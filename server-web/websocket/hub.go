@@ -2,8 +2,10 @@ package websocket
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -27,26 +29,33 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan []byte
+	done       chan struct{}
+	once       sync.Once
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client, 16),
-		unregister: make(chan *Client, 16),
+		unregister: make(chan *Client, 64),
 		broadcast:  make(chan []byte, 64),
+		done:       make(chan struct{}),
 	}
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	defer func() {
+		h.once.Do(func() { close(h.done) })
+		for client := range h.clients {
+			close(client.send)
+			client.conn.Close()
+			delete(h.clients, client)
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
-			for client := range h.clients {
-				close(client.send)
-				client.conn.Close()
-				delete(h.clients, client)
-			}
 			return
 		case client := <-h.register:
 			h.clients[client] = true
@@ -56,15 +65,25 @@ func (h *Hub) Run(ctx context.Context) {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					slog.Warn("websocket hub: client send buffer full, disconnecting")
-					delete(h.clients, client)
-					close(client.send)
-				}
-			}
+			h.broadcastMessage(message)
+		}
+	}
+}
+
+func (h *Hub) broadcastMessage(message []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("websocket hub: recovered panic during broadcast", "error", r)
+		}
+	}()
+
+	for client := range h.clients {
+		select {
+		case client.send <- message:
+		default:
+			slog.Warn("websocket hub: client send buffer full, disconnecting")
+			delete(h.clients, client)
+			close(client.send)
 		}
 	}
 }
@@ -75,6 +94,8 @@ func (h *Hub) Broadcast(message []byte) {
 	}
 
 	select {
+	case <-h.done:
+		return
 	case h.broadcast <- message:
 	default:
 		slog.Warn("websocket hub: broadcast channel full, message dropped")
@@ -82,6 +103,12 @@ func (h *Hub) Broadcast(message []byte) {
 }
 
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
+	select {
+	case <-h.done:
+		return fmt.Errorf("websocket hub is shutting down")
+	default:
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return err
@@ -94,6 +121,9 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	select {
+	case <-h.done:
+		conn.Close()
+		return fmt.Errorf("websocket hub is shutting down")
 	case h.register <- client:
 	default:
 		conn.Close()
@@ -117,6 +147,7 @@ func (c *Client) readPump() {
 		select {
 		case c.hub.unregister <- c:
 		default:
+			slog.Warn("websocket hub: unregister channel full, client may leak")
 		}
 		c.conn.Close()
 	}()
