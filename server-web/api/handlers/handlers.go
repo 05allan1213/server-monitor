@@ -49,6 +49,17 @@ type response struct {
 
 const defaultAlertEventsLimit int64 = 8
 
+var validAlertEventStatuses = map[string]struct{}{
+	"firing":   {},
+	"resolved": {},
+}
+
+var validAlertEventSeverities = map[string]struct{}{
+	"critical": {},
+	"warning":  {},
+	"info":     {},
+}
+
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
@@ -277,6 +288,8 @@ func (h *Handler) AlertEvents(c *gin.Context) {
 	defer cancel()
 
 	limit := parseAlertEventsLimit(c.Query("limit"))
+	statusFilter := parseAlertEventFilter(c.Query("status"), validAlertEventStatuses)
+	severityFilter := parseAlertEventFilter(c.Query("severity"), validAlertEventSeverities)
 
 	values, err := h.cacheClient.LRange(ctx, rediscache.AlertEventsKey, 0, limit-1)
 	if err != nil {
@@ -287,9 +300,12 @@ func (h *Handler) AlertEvents(c *gin.Context) {
 		return
 	}
 
+	events := decodeAlertEvents(values)
+	events = filterAlertEvents(events, statusFilter, severityFilter)
+
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   decodeAlertEvents(values),
+		Data:   events,
 	})
 }
 
@@ -383,4 +399,31 @@ func parseAlertEventsLimit(raw string) int64 {
 	}
 
 	return parsed
+}
+
+func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {
+	if _, ok := allowed[raw]; !ok {
+		return ""
+	}
+
+	return raw
+}
+
+func filterAlertEvents(events []webhook.AlertEvent, statusFilter, severityFilter string) []webhook.AlertEvent {
+	if statusFilter == "" && severityFilter == "" {
+		return events
+	}
+
+	filtered := make([]webhook.AlertEvent, 0, len(events))
+	for _, event := range events {
+		if statusFilter != "" && event.Status != statusFilter {
+			continue
+		}
+		if severityFilter != "" && (event.Labels["severity"] != severityFilter) {
+			continue
+		}
+		filtered = append(filtered, event)
+	}
+
+	return filtered
 }

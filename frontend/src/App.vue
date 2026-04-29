@@ -57,22 +57,7 @@ const filteredAlerts = computed(() => {
   );
 });
 
-const filteredAlertEvents = computed(() => {
-  return alertEvents.value.filter((event) => {
-    const matchesStatus =
-      selectedEventStatus.value === "all" ||
-      event.status === selectedEventStatus.value;
-    const matchesSeverity =
-      selectedEventSeverity.value === "all" ||
-      (event.labels.severity ?? "info") === selectedEventSeverity.value;
-
-    return matchesStatus && matchesSeverity;
-  });
-});
-
-const latestAlertEvents = computed(() =>
-  filteredAlertEvents.value.slice(0, alertEventsLimit),
-);
+const latestAlertEvents = computed(() => alertEvents.value.slice(0, alertEventsLimit));
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -149,12 +134,14 @@ function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
 
 function setEventStatusFilter(value: "all" | "firing" | "resolved") {
   selectedEventStatus.value = value;
+  loadAlertEvents();
 }
 
 function setEventSeverityFilter(
   value: "all" | "critical" | "warning" | "info",
 ) {
   selectedEventSeverity.value = value;
+  loadAlertEvents();
 }
 
 async function loadAlerts() {
@@ -170,7 +157,11 @@ async function loadAlerts() {
 async function loadAlertEvents() {
   try {
     alertEventsError.value = "";
-    const data = await fetchAlertEvents(alertEventsLimit);
+    const data = await fetchAlertEvents({
+      limit: alertEventsLimit,
+      status: selectedEventStatus.value,
+      severity: selectedEventSeverity.value,
+    });
     alertEvents.value = data;
   } catch (err) {
     alertEventsError.value = err instanceof Error ? err.message : "加载事件失败";
@@ -954,7 +945,7 @@ onBeforeUnmount(() => {
         <p class="empty-sub">新告警或恢复事件会在这里按时间倒序展示</p>
       </div>
 
-      <div v-else-if="filteredAlertEvents.length === 0" class="empty-state">
+      <div v-else-if="alertEvents.length === 0" class="empty-state">
         <p>当前筛选条件下没有事件</p>
         <p class="empty-sub">可以切换状态或级别查看其他最近事件</p>
       </div>
