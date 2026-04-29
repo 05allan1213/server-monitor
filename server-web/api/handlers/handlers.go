@@ -14,6 +14,7 @@ import (
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
 	"server-web/webhook"
+	ws "server-web/websocket"
 )
 
 type Handler struct {
@@ -21,6 +22,7 @@ type Handler struct {
 	cacheClient  *rediscache.Client
 	readyTimeout time.Duration
 	hostsTTL     time.Duration
+	websocketHub *ws.Hub
 }
 
 type response struct {
@@ -29,12 +31,13 @@ type response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
-func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, hostsTTL time.Duration) *Handler {
+func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:   promClient,
 		cacheClient:  cacheClient,
 		readyTimeout: readyTimeout,
 		hostsTTL:     hostsTTL,
+		websocketHub: websocketHub,
 	}
 }
 
@@ -235,6 +238,23 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 		Status: "success",
 		Data:   alerts,
 	})
+}
+
+func (h *Handler) AlertsWebSocket(c *gin.Context) {
+	if h.websocketHub == nil {
+		c.JSON(http.StatusServiceUnavailable, response{
+			Status: "error",
+			Error:  "websocket hub is unavailable",
+		})
+		return
+	}
+
+	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
+		c.JSON(http.StatusBadRequest, response{
+			Status: "error",
+			Error:  fmt.Sprintf("websocket upgrade failed: %v", err),
+		})
+	}
 }
 
 func (h *Handler) getCachedHosts(ctx context.Context) ([]promclient.Host, bool) {
