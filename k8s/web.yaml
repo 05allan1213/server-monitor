@@ -12,7 +12,7 @@ kind: Deployment
 metadata:
   name: server-web
 spec:
-  replicas: 1                       # 副本数
+  replicas: 1
   selector:
     matchLabels:
       app: server-web
@@ -23,26 +23,23 @@ spec:
     spec:
       containers:
         - name: server-web
-          image: goproject-server-web:latest  # 镜像地址（需替换为实际镜像）
-          imagePullPolicy: IfNotPresent       # 镜像拉取策略
+          image: goproject-server-web:latest
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080   # Web 服务端口
-          # 资源限制（用于 HPA 自动扩缩容）
+            - containerPort: 8080
           resources:
-            requests:                # 最小资源请求
-              cpu: 50m               # 50 毫核
-              memory: 64Mi           # 64 MiB
-            limits:                  # 最大资源限制
-              cpu: 200m              # 200 毫核
-              memory: 128Mi          # 128 MiB
-          # 存活探针：检测容器是否存活
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
-          # 就绪探针：检测容器是否就绪
           readinessProbe:
             httpGet:
               path: /readyz
@@ -51,15 +48,19 @@ spec:
             periodSeconds: 5
           env:
             - name: TZ
-              value: Asia/Shanghai   # 时区设置
+              value: Asia/Shanghai
             - name: GIN_MODE
               value: release
             - name: PROMETHEUS_URL
               value: http://prometheus:9090
-            - name: READY_TIMEOUT_SECONDS
-              value: "3"
             - name: REDIS_ADDR
               value: redis:6379
+            - name: READY_TIMEOUT_SECONDS
+              value: "3"
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: "5"
+            - name: HOSTS_CACHE_TTL_SECONDS
+              value: "30"
 
 ---
 # ------------------------------------------
@@ -73,7 +74,7 @@ spec:
   selector:
     app: server-web
   ports:
-    - port: 8080                    # 服务端口
-      targetPort: 8080              # 容器端口
-      nodePort: 30080               # NodePort（外部访问端口）
-  type: NodePort                    # 服务类型：NodePort 允许外部访问
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+  type: NodePort

@@ -3,6 +3,7 @@ package rediscache
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -51,6 +52,9 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {
 
 	value, err := c.client.Get(ctx, key).Bytes()
 	if err != nil {
+		if err != redis.Nil {
+			log.Printf("redis get %s failed: %v", key, err)
+		}
 		return nil, false
 	}
 

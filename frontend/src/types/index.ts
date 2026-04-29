@@ -1,5 +1,5 @@
 export interface AlertRecord {
-  status: string;
+  status: "firing" | "resolved";
   fingerprint: string;
   labels: Record<string, string>;
   annotations: Record<string, string>;
@@ -10,6 +10,6 @@ export interface AlertRecord {
 
 export interface ApiResponse<T> {
   status: string;
-  data: T;
+  data?: T;
   error?: string;
 }

@@ -15,11 +15,19 @@ function buildWebSocketUrl() {
   return `${protocol}//${window.location.host}/ws/alerts`;
 }
 
+function isValidAlertRecord(data: unknown): data is AlertRecord {
+  if (!data || typeof data !== "object") return false;
+  const record = data as Record<string, unknown>;
+  return typeof record.fingerprint === "string" && typeof record.status === "string";
+}
+
 export function useAlertsWebSocket(onAlert: (alert: AlertRecord) => void) {
   const connectionState = ref<ConnectionState>("disconnected");
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let manuallyClosed = false;
+  let reconnectDelay = 1000;
+  const maxReconnectDelay = 30000;
 
   function clearReconnectTimer() {
     if (reconnectTimer !== null) {
@@ -36,28 +44,36 @@ export function useAlertsWebSocket(onAlert: (alert: AlertRecord) => void) {
     clearReconnectTimer();
     reconnectTimer = window.setTimeout(() => {
       connect();
-    }, 3000);
+    }, reconnectDelay);
+
+    reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
   }
 
   function connect() {
     clearReconnectTimer();
 
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
     manuallyClosed = false;
+    reconnectDelay = 1000;
     connectionState.value = "connecting";
     socket = new WebSocket(buildWebSocketUrl());
 
     socket.onopen = () => {
+      reconnectDelay = 1000;
       connectionState.value = "connected";
     };
 
     socket.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as AlertRecord;
-        onAlert(payload);
+        const payload = JSON.parse(event.data);
+        if (isValidAlertRecord(payload)) {
+          onAlert(payload);
+        } else {
+          console.error("Invalid alert record from websocket", payload);
+        }
       } catch (error) {
         console.error("Failed to parse alert websocket message", error);
       }
@@ -70,7 +86,7 @@ export function useAlertsWebSocket(onAlert: (alert: AlertRecord) => void) {
     };
 
     socket.onerror = () => {
-      connectionState.value = "disconnected";
+      // onclose will fire after onerror, handle reconnection there
     };
   }
 

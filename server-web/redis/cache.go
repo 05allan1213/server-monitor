@@ -1,8 +1,7 @@
 package rediscache
 
 const (
-	HostsListKey       = "hosts:list"
-	ActiveAlertsKey    = "alert:active"
-	AlertChannel       = "alert:channel"
-	AlertEventNoExpiry = 0
+	HostsListKey    = "hosts:list"
+	ActiveAlertsKey = "alert:active"
+	AlertChannel    = "alert:channel"
 )

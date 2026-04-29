@@ -19,11 +19,12 @@ import (
 )
 
 type Handler struct {
-	promClient   *promclient.Client
-	cacheClient  *rediscache.Client
-	readyTimeout time.Duration
-	hostsTTL     time.Duration
-	websocketHub *ws.Hub
+	promClient    *promclient.Client
+	cacheClient   *rediscache.Client
+	readyTimeout  time.Duration
+	requestTimeout time.Duration
+	hostsTTL      time.Duration
+	websocketHub  *ws.Hub
 }
 
 type response struct {
@@ -34,11 +35,12 @@ type response struct {
 
 func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
-		promClient:   promClient,
-		cacheClient:  cacheClient,
-		readyTimeout: readyTimeout,
-		hostsTTL:     hostsTTL,
-		websocketHub: websocketHub,
+		promClient:    promClient,
+		cacheClient:   cacheClient,
+		readyTimeout:  readyTimeout,
+		requestTimeout: 5 * time.Second,
+		hostsTTL:      hostsTTL,
+		websocketHub:  websocketHub,
 	}
 }
 
@@ -98,7 +100,7 @@ func (h *Handler) Readyz(c *gin.Context) {
 }
 
 func (h *Handler) Hosts(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
@@ -118,7 +120,9 @@ func (h *Handler) Hosts(c *gin.Context) {
 		return
 	}
 
-	h.cacheHosts(ctx, hosts)
+	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cacheCancel()
+	h.cacheHosts(cacheCtx, hosts)
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
@@ -144,6 +148,9 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
+	defer cancel()
+
 	for _, alert := range payload.Alerts {
 		if alert.Fingerprint == "" {
 			continue
@@ -160,7 +167,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 
 		switch alert.Status {
 		case "firing":
-			if err := h.cacheClient.HSet(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint, message); err != nil {
+			if err := h.cacheClient.HSet(ctx, rediscache.ActiveAlertsKey, alert.Fingerprint, message); err != nil {
 				c.JSON(http.StatusBadGateway, response{
 					Status: "error",
 					Error:  fmt.Sprintf("store active alert failed: %v", err),
@@ -168,7 +175,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 				return
 			}
 		case "resolved":
-			if err := h.cacheClient.HDel(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint); err != nil {
+			if err := h.cacheClient.HDel(ctx, rediscache.ActiveAlertsKey, alert.Fingerprint); err != nil {
 				c.JSON(http.StatusBadGateway, response{
 					Status: "error",
 					Error:  fmt.Sprintf("delete active alert failed: %v", err),
@@ -177,7 +184,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			}
 		}
 
-		if err := h.cacheClient.Publish(c.Request.Context(), rediscache.AlertChannel, message); err != nil {
+		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, message); err != nil {
 			c.JSON(http.StatusBadGateway, response{
 				Status: "error",
 				Error:  fmt.Sprintf("publish alert event failed: %v", err),
@@ -200,7 +207,10 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 		return
 	}
 
-	values, err := h.cacheClient.HGetAll(c.Request.Context(), rediscache.ActiveAlertsKey)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
+	defer cancel()
+
+	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
 			Status: "error",
@@ -213,11 +223,8 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	for _, value := range values {
 		var alert webhook.AlertRecord
 		if err := json.Unmarshal([]byte(value), &alert); err != nil {
-			c.JSON(http.StatusInternalServerError, response{
-				Status: "error",
-				Error:  fmt.Sprintf("decode active alert failed: %v", err),
-			})
-			return
+			log.Printf("skip corrupted alert data: %v", err)
+			continue
 		}
 		alerts = append(alerts, alert)
 	}
@@ -271,8 +278,11 @@ func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
 
 	value, err := json.Marshal(hosts)
 	if err != nil {
+		log.Printf("cache hosts marshal failed: %v", err)
 		return
 	}
 
-	_ = h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL)
+	if err := h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL); err != nil {
+		log.Printf("cache hosts set failed: %v", err)
+	}
 }

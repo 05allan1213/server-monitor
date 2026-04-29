@@ -1,34 +1,27 @@
 package pubsub
 
+import (
+	"log"
+)
+
 type Hub struct {
 	messages chan []byte
 }
 
 func NewHub(bufferSize int) *Hub {
-	if bufferSize <= 0 {
-		bufferSize = 1
-	}
-
 	return &Hub{
 		messages: make(chan []byte, bufferSize),
 	}
 }
 
-func (h *Hub) PublishLocal(message []byte) {
-	if h == nil {
-		return
-	}
+func (h *Hub) Messages() <-chan []byte {
+	return h.messages
+}
 
+func (h *Hub) PublishLocal(message []byte) {
 	select {
 	case h.messages <- message:
 	default:
+		log.Printf("pubsub hub: message channel full, alert dropped")
 	}
-}
-
-func (h *Hub) Messages() <-chan []byte {
-	if h == nil {
-		return nil
-	}
-
-	return h.messages
 }

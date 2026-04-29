@@ -196,7 +196,9 @@ func parseTimestamp(value interface{}) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.Unix(int64(floatValue), 0), nil
+	sec := int64(floatValue)
+	nsec := int64((floatValue - float64(sec)) * 1e9)
+	return time.Unix(sec, nsec), nil
 }
 
 func parseFloat(value interface{}) (float64, error) {

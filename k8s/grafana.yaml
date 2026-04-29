@@ -143,7 +143,6 @@ data:
       ],
       "refresh": "5s",
       "schemaVersion": 39,
-      "style": "dark",
       "tags": [
         "server-monitor"
       ],
@@ -182,9 +181,28 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:latest
+          image: grafana/grafana:10.4.0
           ports:
             - containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources

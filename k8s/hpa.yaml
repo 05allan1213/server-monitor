@@ -13,25 +13,13 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: server-web               # 目标 Deployment
-  minReplicas: 1                   # 最小副本数
-  maxReplicas: 5                   # 最大副本数
+    name: server-web
+  minReplicas: 1
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50   # CPU 使用率超过 50% 时扩容
-
-# ============================================
-# 工作原理
-# ============================================
-# 1. Metrics Server 收集 Pod 资源使用数据
-# 2. HPA 控制器定期检查 CPU 使用率
-# 3. 当 CPU > 50% 时，增加副本数
-# 4. 当 CPU < 50% 时，减少副本数
-# 
-# 安装 Metrics Server:
-# kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-# ============================================
+          averageUtilization: 80

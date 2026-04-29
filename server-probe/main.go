@@ -50,6 +50,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle(cfg.MetricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"healthy":true}`))
+	})
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
