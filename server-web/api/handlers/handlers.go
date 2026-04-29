@@ -71,6 +71,12 @@ var validHostStatuses = map[string]struct{}{
 	"down": {},
 }
 
+var validHostSorts = map[string]struct{}{
+	"instance":    {},
+	"cpu_desc":    {},
+	"memory_desc": {},
+}
+
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
@@ -143,11 +149,12 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	statusFilter := parseAlertEventFilter(c.Query("status"), validHostStatuses)
 	queryFilter := normalizeHostQuery(c.Query("q"))
+	sortBy := parseHostSort(c.Query("sort"))
 
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
 		c.JSON(http.StatusOK, response{
 			Status: "success",
-			Data:   filterHosts(cachedHosts, statusFilter, queryFilter),
+			Data:   sortHosts(filterHosts(cachedHosts, statusFilter, queryFilter), sortBy),
 		})
 		return
 	}
@@ -167,7 +174,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   filterHosts(hosts, statusFilter, queryFilter),
+		Data:   sortHosts(filterHosts(hosts, statusFilter, queryFilter), sortBy),
 	})
 }
 
@@ -502,4 +509,39 @@ func filterHosts(hosts []promclient.Host, statusFilter, queryFilter string) []pr
 
 func normalizeHostQuery(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func parseHostSort(raw string) string {
+	if _, ok := validHostSorts[raw]; !ok {
+		return "instance"
+	}
+
+	return raw
+}
+
+func sortHosts(hosts []promclient.Host, sortBy string) []promclient.Host {
+	sorted := append([]promclient.Host(nil), hosts...)
+
+	switch sortBy {
+	case "cpu_desc":
+		sort.SliceStable(sorted, func(i, j int) bool {
+			if sorted[i].CPU == sorted[j].CPU {
+				return sorted[i].Instance < sorted[j].Instance
+			}
+			return sorted[i].CPU > sorted[j].CPU
+		})
+	case "memory_desc":
+		sort.SliceStable(sorted, func(i, j int) bool {
+			if sorted[i].Memory == sorted[j].Memory {
+				return sorted[i].Instance < sorted[j].Instance
+			}
+			return sorted[i].Memory > sorted[j].Memory
+		})
+	default:
+		sort.SliceStable(sorted, func(i, j int) bool {
+			return sorted[i].Instance < sorted[j].Instance
+		})
+	}
+
+	return sorted
 }

@@ -50,6 +50,7 @@ const infoCount = computed(
 );
 const alertEventsLimit = 8;
 const selectedHostStatus = ref<"all" | "up" | "down">("all");
+const selectedHostSort = ref<"instance" | "cpu_desc" | "memory_desc">("instance");
 const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
 const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
@@ -134,6 +135,33 @@ function matchesHostQuery(host: Host, query: string): boolean {
   return host.instance.toLowerCase().includes(query);
 }
 
+function sortHosts(hostList: Host[]): Host[] {
+  const sorted = [...hostList];
+
+  switch (selectedHostSort.value) {
+    case "cpu_desc":
+      sorted.sort((a, b) => {
+        if (b.cpu === a.cpu) {
+          return a.instance.localeCompare(b.instance);
+        }
+        return b.cpu - a.cpu;
+      });
+      break;
+    case "memory_desc":
+      sorted.sort((a, b) => {
+        if (b.memory === a.memory) {
+          return a.instance.localeCompare(b.instance);
+        }
+        return b.memory - a.memory;
+      });
+      break;
+    default:
+      sorted.sort((a, b) => a.instance.localeCompare(b.instance));
+  }
+
+  return sorted;
+}
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString("zh-CN");
@@ -149,6 +177,11 @@ function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
 
 function setHostStatusFilter(value: "all" | "up" | "down") {
   selectedHostStatus.value = value;
+  loadHosts();
+}
+
+function setHostSort(value: "instance" | "cpu_desc" | "memory_desc") {
+  selectedHostSort.value = value;
   loadHosts();
 }
 
@@ -200,8 +233,9 @@ async function loadHosts() {
     const data = await fetchHosts({
       status: selectedHostStatus.value,
       q: appliedHostQuery.value,
+      sort: selectedHostSort.value,
     });
-    hosts.value = data;
+    hosts.value = sortHosts(data);
   } catch (err) {
     console.error("loadHosts failed:", err);
   }
@@ -257,13 +291,13 @@ function applyIncomingAlert(event: AlertEvent) {
 }
 
 function applyIncomingHosts(newHosts: Host[]) {
-  hosts.value = newHosts.filter((host) => {
+  hosts.value = sortHosts(newHosts.filter((host) => {
     const statusMatched =
       selectedHostStatus.value === "all" ||
       isHostUp(host.status) === (selectedHostStatus.value === "up");
 
     return statusMatched && matchesHostQuery(host, appliedHostQuery.value);
-  });
+  }));
   lastUpdateTime.value = Date.now();
 }
 
@@ -638,6 +672,32 @@ onBeforeUnmount(() => {
               @click="setHostStatusFilter('down')"
             >
               离线
+            </button>
+          </div>
+          <div class="filter-group">
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostSort === 'instance' }"
+              @click="setHostSort('instance')"
+            >
+              名称
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostSort === 'cpu_desc' }"
+              @click="setHostSort('cpu_desc')"
+            >
+              CPU
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostSort === 'memory_desc' }"
+              @click="setHostSort('memory_desc')"
+            >
+              内存
             </button>
           </div>
           <span class="panel-badge">WebSocket 实时推送</span>

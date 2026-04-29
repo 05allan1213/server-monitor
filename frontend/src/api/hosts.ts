@@ -5,6 +5,7 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 export interface HostsQuery {
   status?: "all" | "up" | "down";
   q?: string;
+  sort?: "instance" | "cpu_desc" | "memory_desc";
 }
 
 export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
@@ -18,6 +19,9 @@ export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
     }
     if (query.q) {
       url.searchParams.set("q", query.q);
+    }
+    if (query.sort && query.sort !== "instance") {
+      url.searchParams.set("sort", query.sort);
     }
 
     const response = await fetch(url.toString(), {
