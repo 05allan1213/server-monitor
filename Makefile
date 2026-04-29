@@ -1,4 +1,4 @@
-.PHONY: all build build-probe build-web run run-probe run-web docker docker-up docker-down docker-logs clean test help
+.PHONY: all build build-probe build-web run run-probe run-web docker docker-up docker-down docker-logs clean test help dev-deps dev-web dev-frontend dev-stop
 
 all: build
 
@@ -27,6 +27,33 @@ run-probe:
 run-web:
 	@echo "启动 server-web..."
 	cd server-web && go run main.go
+
+# ============================================
+# 开发模式（无需构建 Docker 镜像）
+# ============================================
+
+dev-deps:
+	@echo "启动依赖服务（Redis、Prometheus、AlertManager、server-probe）..."
+	docker compose up -d redis prometheus alertmanager server-probe
+	@echo "依赖服务已启动"
+	@echo "  Redis:        localhost:6379"
+	@echo "  Prometheus:   http://localhost:9091"
+	@echo "  AlertManager: http://localhost:9093"
+	@echo "  server-probe: http://localhost:9090"
+
+dev-web:
+	@echo "本地启动 server-web..."
+	@echo "环境变量: PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379"
+	cd server-web && PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 GIN_MODE=debug go run main.go
+
+dev-frontend:
+	@echo "本地启动前端开发服务器..."
+	@echo "Vite 代理已配置: /api -> localhost:8080, /ws -> ws://localhost:8080"
+	cd frontend && npm run dev
+
+dev-stop:
+	@echo "停止开发依赖服务..."
+	docker compose down
 
 # ============================================
 # Docker 相关
@@ -105,16 +132,22 @@ help:
 	@echo "  make build-probe    构建 server-probe"
 	@echo "  make build-web      构建 server-web"
 	@echo ""
-	@echo "运行命令:"
-	@echo "  make run-probe      运行 server-probe"
-	@echo "  make run-web        运行 server-web"
+	@echo "开发模式（推荐开发阶段使用，无需构建镜像）:"
+	@echo "  make dev-deps       启动依赖服务（Redis/Prometheus/AlertManager/Probe）"
+	@echo "  make dev-web        本地运行 server-web（需先启动 dev-deps）"
+	@echo "  make dev-frontend   本地运行前端开发服务器（需先启动 dev-web）"
+	@echo "  make dev-stop       停止开发依赖服务"
 	@echo ""
-	@echo "Docker 命令:"
+	@echo "Docker 命令（生产/完整部署）:"
 	@echo "  make docker         构建 Docker 镜像"
 	@echo "  make docker-up      启动所有服务"
 	@echo "  make docker-down    停止所有服务"
 	@echo "  make docker-logs    查看服务日志"
 	@echo "  make docker-clean   停止并清理所有数据"
+	@echo ""
+	@echo "本地运行:"
+	@echo "  make run-probe      运行 server-probe"
+	@echo "  make run-web        运行 server-web"
 	@echo ""
 	@echo "测试与检查:"
 	@echo "  make test           运行测试"
