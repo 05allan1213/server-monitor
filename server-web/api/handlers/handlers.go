@@ -142,11 +142,12 @@ func (h *Handler) Hosts(c *gin.Context) {
 	defer cancel()
 
 	statusFilter := parseAlertEventFilter(c.Query("status"), validHostStatuses)
+	queryFilter := normalizeHostQuery(c.Query("q"))
 
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
 		c.JSON(http.StatusOK, response{
 			Status: "success",
-			Data:   filterHostsByStatus(cachedHosts, statusFilter),
+			Data:   filterHosts(cachedHosts, statusFilter, queryFilter),
 		})
 		return
 	}
@@ -166,7 +167,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   filterHostsByStatus(hosts, statusFilter),
+		Data:   filterHosts(hosts, statusFilter, queryFilter),
 	})
 }
 
@@ -478,4 +479,27 @@ func filterHostsByStatus(hosts []promclient.Host, statusFilter string) []promcli
 	}
 
 	return filtered
+}
+
+func filterHostsByQuery(hosts []promclient.Host, queryFilter string) []promclient.Host {
+	if queryFilter == "" {
+		return hosts
+	}
+
+	filtered := make([]promclient.Host, 0, len(hosts))
+	for _, host := range hosts {
+		if strings.Contains(strings.ToLower(host.Instance), queryFilter) {
+			filtered = append(filtered, host)
+		}
+	}
+
+	return filtered
+}
+
+func filterHosts(hosts []promclient.Host, statusFilter, queryFilter string) []promclient.Host {
+	return filterHostsByQuery(filterHostsByStatus(hosts, statusFilter), queryFilter)
+}
+
+func normalizeHostQuery(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }

@@ -13,6 +13,8 @@ const loading = ref(true);
 const refreshing = ref(false);
 const alertsError = ref("");
 const alertEventsError = ref("");
+const hostSearchInput = ref("");
+const appliedHostQuery = ref("");
 const selectedSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 const beijingTime = ref("");
 const beijingTimer = ref<number | null>(null);
@@ -124,6 +126,14 @@ function isHostUp(status: string): boolean {
   return status === "up" || status === "healthy";
 }
 
+function matchesHostQuery(host: Host, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  return host.instance.toLowerCase().includes(query);
+}
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString("zh-CN");
@@ -139,6 +149,11 @@ function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
 
 function setHostStatusFilter(value: "all" | "up" | "down") {
   selectedHostStatus.value = value;
+  loadHosts();
+}
+
+function applyHostSearch() {
+  appliedHostQuery.value = hostSearchInput.value.trim().toLowerCase();
   loadHosts();
 }
 
@@ -184,6 +199,7 @@ async function loadHosts() {
   try {
     const data = await fetchHosts({
       status: selectedHostStatus.value,
+      q: appliedHostQuery.value,
     });
     hosts.value = data;
   } catch (err) {
@@ -241,12 +257,13 @@ function applyIncomingAlert(event: AlertEvent) {
 }
 
 function applyIncomingHosts(newHosts: Host[]) {
-  if (selectedHostStatus.value === "all") {
-    hosts.value = newHosts;
-  } else {
-    const shouldBeUp = selectedHostStatus.value === "up";
-    hosts.value = newHosts.filter((host) => isHostUp(host.status) === shouldBeUp);
-  }
+  hosts.value = newHosts.filter((host) => {
+    const statusMatched =
+      selectedHostStatus.value === "all" ||
+      isHostUp(host.status) === (selectedHostStatus.value === "up");
+
+    return statusMatched && matchesHostQuery(host, appliedHostQuery.value);
+  });
   lastUpdateTime.value = Date.now();
 }
 
@@ -585,7 +602,18 @@ onBeforeUnmount(() => {
           </svg>
           <h2>主机指标</h2>
         </div>
-        <div class="panel-actions">
+        <div class="panel-actions panel-actions-wrap">
+          <form class="search-form" @submit.prevent="applyHostSearch">
+            <input
+              v-model="hostSearchInput"
+              type="text"
+              class="search-input"
+              placeholder="搜索主机名"
+            />
+            <button type="submit" class="search-btn">
+              搜索
+            </button>
+          </form>
           <div class="filter-group">
             <button
               type="button"
@@ -650,14 +678,24 @@ onBeforeUnmount(() => {
             <rect x="2" y="14" width="20" height="8" rx="2" />
           </svg>
         </div>
-        <p>{{ selectedHostStatus === "all" ? "暂无主机数据" : "当前筛选条件下没有主机" }}</p>
+        <p>
+          {{
+            appliedHostQuery
+              ? "没有匹配的主机"
+              : selectedHostStatus === "all"
+                ? "暂无主机数据"
+                : "当前筛选条件下没有主机"
+          }}
+        </p>
         <p class="empty-sub">
           {{
-            selectedHostStatus === "all"
-              ? "Prometheus 尚未发现任何主机"
-              : selectedHostStatus === "up"
-                ? "当前没有在线主机"
-                : "当前没有离线主机"
+            appliedHostQuery
+              ? `没有匹配“${hostSearchInput.trim() || appliedHostQuery}”的主机`
+              : selectedHostStatus === "all"
+                ? "Prometheus 尚未发现任何主机"
+                : selectedHostStatus === "up"
+                  ? "当前没有在线主机"
+                  : "当前没有离线主机"
           }}
         </p>
       </div>
@@ -1400,6 +1438,41 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+.search-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.search-input {
+  min-width: 11rem;
+  padding: 0.35rem 0.5rem;
+  color: var(--text-primary);
+  cursor: text;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.search-btn:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
 /* Skeleton */
 .skeleton {
   animation: skeleton-pulse 1.5s ease-in-out infinite;
@@ -1900,6 +1973,15 @@ onBeforeUnmount(() => {
 
   .panel-actions-wrap {
     justify-content: flex-start;
+  }
+
+  .search-form {
+    width: 100%;
+  }
+
+  .search-input {
+    min-width: 0;
+    flex: 1;
   }
 
   .hosts-grid {
