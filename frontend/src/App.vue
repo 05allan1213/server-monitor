@@ -47,6 +47,7 @@ const infoCount = computed(
       .length,
 );
 const latestAlertEvents = computed(() => alertEvents.value.slice(0, 8));
+const alertEventsLimit = 8;
 
 const filteredAlerts = computed(() => {
   if (selectedSeverity.value === "all") return alerts.value;
@@ -141,7 +142,7 @@ async function loadAlerts() {
 async function loadAlertEvents() {
   try {
     alertEventsError.value = "";
-    const data = await fetchAlertEvents();
+    const data = await fetchAlertEvents(alertEventsLimit);
     alertEvents.value = data;
   } catch (err) {
     alertEventsError.value = err instanceof Error ? err.message : "加载事件失败";

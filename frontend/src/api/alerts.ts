@@ -26,12 +26,13 @@ export async function fetchActiveAlerts(): Promise<AlertRecord[]> {
   }
 }
 
-export async function fetchAlertEvents(): Promise<AlertEvent[]> {
+export async function fetchAlertEvents(limit = 8): Promise<AlertEvent[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const query = new URLSearchParams({ limit: String(limit) });
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/v1/alerts/events`, {
+    const response = await fetch(`${apiBaseUrl}/api/v1/alerts/events?${query.toString()}`, {
       signal: controller.signal,
     });
 

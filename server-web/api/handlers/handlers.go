@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ type response struct {
 	Data   interface{} `json:"data,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
+
+const defaultAlertEventsLimit int64 = 8
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
@@ -273,7 +276,9 @@ func (h *Handler) AlertEvents(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
-	values, err := h.cacheClient.LRange(ctx, rediscache.AlertEventsKey, 0, rediscache.AlertEventsMax-1)
+	limit := parseAlertEventsLimit(c.Query("limit"))
+
+	values, err := h.cacheClient.LRange(ctx, rediscache.AlertEventsKey, 0, limit-1)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
 			Status: "error",
@@ -362,4 +367,20 @@ func decodeAlertEvents(values []string) []webhook.AlertEvent {
 	}
 
 	return events
+}
+
+func parseAlertEventsLimit(raw string) int64 {
+	if raw == "" {
+		return defaultAlertEventsLimit
+	}
+
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed <= 0 {
+		return defaultAlertEventsLimit
+	}
+	if parsed > rediscache.AlertEventsMax {
+		return rediscache.AlertEventsMax
+	}
+
+	return parsed
 }
