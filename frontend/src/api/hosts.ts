@@ -6,6 +6,7 @@ export interface HostsQuery {
   status?: "all" | "up" | "down";
   q?: string;
   sort?: "instance" | "cpu_desc" | "memory_desc";
+  risk?: "all" | "high_cpu" | "high_memory";
 }
 
 export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
@@ -22,6 +23,9 @@ export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
     }
     if (query.sort && query.sort !== "instance") {
       url.searchParams.set("sort", query.sort);
+    }
+    if (query.risk && query.risk !== "all") {
+      url.searchParams.set("risk", query.risk);
     }
 
     const response = await fetch(url.toString(), {

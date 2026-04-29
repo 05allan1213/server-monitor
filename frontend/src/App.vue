@@ -51,6 +51,7 @@ const infoCount = computed(
 const alertEventsLimit = 8;
 const selectedHostStatus = ref<"all" | "up" | "down">("all");
 const selectedHostSort = ref<"instance" | "cpu_desc" | "memory_desc">("instance");
+const selectedHostRisk = ref<"all" | "high_cpu" | "high_memory">("all");
 const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
 const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
@@ -135,6 +136,17 @@ function matchesHostQuery(host: Host, query: string): boolean {
   return host.instance.toLowerCase().includes(query);
 }
 
+function matchesHostRisk(host: Host): boolean {
+  switch (selectedHostRisk.value) {
+    case "high_cpu":
+      return host.cpu >= 80;
+    case "high_memory":
+      return host.memory >= 85;
+    default:
+      return true;
+  }
+}
+
 function sortHosts(hostList: Host[]): Host[] {
   const sorted = [...hostList];
 
@@ -182,6 +194,11 @@ function setHostStatusFilter(value: "all" | "up" | "down") {
 
 function setHostSort(value: "instance" | "cpu_desc" | "memory_desc") {
   selectedHostSort.value = value;
+  loadHosts();
+}
+
+function setHostRisk(value: "all" | "high_cpu" | "high_memory") {
+  selectedHostRisk.value = value;
   loadHosts();
 }
 
@@ -234,6 +251,7 @@ async function loadHosts() {
       status: selectedHostStatus.value,
       q: appliedHostQuery.value,
       sort: selectedHostSort.value,
+      risk: selectedHostRisk.value,
     });
     hosts.value = sortHosts(data);
   } catch (err) {
@@ -296,7 +314,7 @@ function applyIncomingHosts(newHosts: Host[]) {
       selectedHostStatus.value === "all" ||
       isHostUp(host.status) === (selectedHostStatus.value === "up");
 
-    return statusMatched && matchesHostQuery(host, appliedHostQuery.value);
+    return statusMatched && matchesHostQuery(host, appliedHostQuery.value) && matchesHostRisk(host);
   }));
   lastUpdateTime.value = Date.now();
 }
@@ -700,6 +718,32 @@ onBeforeUnmount(() => {
               内存
             </button>
           </div>
+          <div class="filter-group">
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostRisk === 'all' }"
+              @click="setHostRisk('all')"
+            >
+              全风险
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostRisk === 'high_cpu' }"
+              @click="setHostRisk('high_cpu')"
+            >
+              高 CPU
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedHostRisk === 'high_memory' }"
+              @click="setHostRisk('high_memory')"
+            >
+              高内存
+            </button>
+          </div>
           <span class="panel-badge">WebSocket 实时推送</span>
         </div>
       </div>
@@ -751,6 +795,10 @@ onBeforeUnmount(() => {
           {{
             appliedHostQuery
               ? `没有匹配“${hostSearchInput.trim() || appliedHostQuery}”的主机`
+              : selectedHostRisk === "high_cpu"
+                ? "当前没有高 CPU 主机"
+                : selectedHostRisk === "high_memory"
+                  ? "当前没有高内存主机"
               : selectedHostStatus === "all"
                 ? "Prometheus 尚未发现任何主机"
                 : selectedHostStatus === "up"

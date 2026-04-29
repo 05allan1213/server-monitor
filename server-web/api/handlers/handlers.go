@@ -77,6 +77,11 @@ var validHostSorts = map[string]struct{}{
 	"memory_desc": {},
 }
 
+var validHostRisks = map[string]struct{}{
+	"high_cpu":    {},
+	"high_memory": {},
+}
+
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
@@ -150,11 +155,12 @@ func (h *Handler) Hosts(c *gin.Context) {
 	statusFilter := parseAlertEventFilter(c.Query("status"), validHostStatuses)
 	queryFilter := normalizeHostQuery(c.Query("q"))
 	sortBy := parseHostSort(c.Query("sort"))
+	riskFilter := parseHostRisk(c.Query("risk"))
 
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
 		c.JSON(http.StatusOK, response{
 			Status: "success",
-			Data:   sortHosts(filterHosts(cachedHosts, statusFilter, queryFilter), sortBy),
+			Data:   sortHosts(filterHosts(cachedHosts, statusFilter, queryFilter, riskFilter), sortBy),
 		})
 		return
 	}
@@ -174,7 +180,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   sortHosts(filterHosts(hosts, statusFilter, queryFilter), sortBy),
+		Data:   sortHosts(filterHosts(hosts, statusFilter, queryFilter, riskFilter), sortBy),
 	})
 }
 
@@ -503,8 +509,30 @@ func filterHostsByQuery(hosts []promclient.Host, queryFilter string) []promclien
 	return filtered
 }
 
-func filterHosts(hosts []promclient.Host, statusFilter, queryFilter string) []promclient.Host {
-	return filterHostsByQuery(filterHostsByStatus(hosts, statusFilter), queryFilter)
+func filterHostsByRisk(hosts []promclient.Host, riskFilter string) []promclient.Host {
+	if riskFilter == "" {
+		return hosts
+	}
+
+	filtered := make([]promclient.Host, 0, len(hosts))
+	for _, host := range hosts {
+		switch riskFilter {
+		case "high_cpu":
+			if host.CPU >= 80 {
+				filtered = append(filtered, host)
+			}
+		case "high_memory":
+			if host.Memory >= 85 {
+				filtered = append(filtered, host)
+			}
+		}
+	}
+
+	return filtered
+}
+
+func filterHosts(hosts []promclient.Host, statusFilter, queryFilter, riskFilter string) []promclient.Host {
+	return filterHostsByRisk(filterHostsByQuery(filterHostsByStatus(hosts, statusFilter), queryFilter), riskFilter)
 }
 
 func normalizeHostQuery(raw string) string {
@@ -514,6 +542,14 @@ func normalizeHostQuery(raw string) string {
 func parseHostSort(raw string) string {
 	if _, ok := validHostSorts[raw]; !ok {
 		return "instance"
+	}
+
+	return raw
+}
+
+func parseHostRisk(raw string) string {
+	if _, ok := validHostRisks[raw]; !ok {
+		return ""
 	}
 
 	return raw
