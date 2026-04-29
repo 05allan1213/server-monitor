@@ -1,62 +1,153 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 
 import { fetchActiveAlerts } from "./api/alerts";
+import { fetchHosts } from "./api/hosts";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
-import type { AlertRecord } from "./types";
+import type { AlertRecord, Host } from "./types";
 
 const alerts = ref<AlertRecord[]>([]);
+const hosts = ref<Host[]>([]);
 const loading = ref(true);
 const refreshing = ref(false);
-const errorMessage = ref("");
-const lastUpdatedAt = ref("");
-const latestEvent = ref("");
+const error = ref("");
 const selectedSeverity = ref<"all" | "critical" | "warning" | "info">("all");
+const beijingTime = ref("");
+const beijingTimer = ref<number | null>(null);
+const lastUpdateTime = ref(Date.now());
+const updateAgo = ref("");
+const updateAgoTimer = ref<number | null>(null);
+const isFullscreen = ref(false);
+const toasts = ref<{ id: number; message: string; severity: string }[]>(
+  [],
+);
+let toastId = 0;
 
-const criticalCount = computed(
-  () => alerts.value.filter((alert) => alert.labels.severity === "critical").length,
+const { connectionState, connect, disconnect } = useAlertsWebSocket(
+  applyIncomingAlert,
+  applyIncomingHosts,
 );
 
+const criticalCount = computed(
+  () =>
+    alerts.value.filter((a) => (a.labels.severity ?? "info") === "critical")
+      .length,
+);
 const warningCount = computed(
-  () => alerts.value.filter((alert) => alert.labels.severity === "warning").length,
+  () =>
+    alerts.value.filter((a) => (a.labels.severity ?? "info") === "warning")
+      .length,
+);
+const infoCount = computed(
+  () =>
+    alerts.value.filter((a) => (a.labels.severity ?? "info") === "info")
+      .length,
 );
 
 const filteredAlerts = computed(() => {
-  if (selectedSeverity.value === "all") {
-    return alerts.value;
-  }
-
+  if (selectedSeverity.value === "all") return alerts.value;
   return alerts.value.filter(
-    (alert) => (alert.labels.severity ?? "info") === selectedSeverity.value,
+    (a) => (a.labels.severity ?? "info") === selectedSeverity.value,
   );
 });
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
     case "connected":
-      return "Live";
+      return "实时连接";
     case "connecting":
-      return "Connecting";
-    default:
-      return "Offline";
+      return "连接中";
+    case "disconnected":
+      return "离线";
   }
 });
 
-async function loadAlerts(showSpinner = true) {
-  if (showSpinner) {
-    loading.value = true;
-  } else {
-    refreshing.value = true;
+watch(
+  () => alerts.value.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen) {
+      document.title =
+        newLen > 0 ? `(${newLen}) 服务监控大屏` : "服务监控大屏";
+    } else if (newLen === 0) {
+      document.title = "服务监控大屏";
+    }
+  },
+);
+
+function severityClass(severity: string | undefined): string {
+  switch (severity ?? "info") {
+    case "critical":
+      return "severity-critical";
+    case "warning":
+      return "severity-warning";
+    default:
+      return "severity-info";
   }
+}
 
-  errorMessage.value = "";
+function severityLabel(severity: string | undefined): string {
+  switch (severity ?? "info") {
+    case "critical":
+      return "严重";
+    case "warning":
+      return "警告";
+    default:
+      return "提示";
+  }
+}
 
+function cpuColor(value: number): string {
+  if (value > 80) return "var(--danger)";
+  if (value > 60) return "var(--warning)";
+  return "var(--success)";
+}
+
+function memoryColor(value: number): string {
+  if (value > 85) return "var(--danger)";
+  if (value > 70) return "var(--warning)";
+  return "var(--success)";
+}
+
+function isHostUp(status: string): boolean {
+  return status === "up" || status === "healthy";
+}
+
+function formatTime(iso: string): string {
   try {
-    alerts.value = await fetchActiveAlerts();
-    lastUpdatedAt.value = new Date().toLocaleString();
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error ? error.message : "Failed to load active alerts";
+    return new Date(iso).toLocaleString("zh-CN");
+  } catch {
+    return iso;
+  }
+}
+
+function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
+  selectedSeverity.value = value;
+}
+
+async function loadAlerts() {
+  try {
+    error.value = "";
+    const data = await fetchActiveAlerts();
+    alerts.value = data;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "加载告警失败";
+  }
+}
+
+async function loadHosts() {
+  try {
+    const data = await fetchHosts();
+    hosts.value = data;
+  } catch {
+    // 静默刷新
+  }
+}
+
+async function refreshAll() {
+  refreshing.value = true;
+  try {
+    await Promise.all([loadAlerts(), loadHosts()]);
+    lastUpdateTime.value = Date.now();
   } finally {
     loading.value = false;
     refreshing.value = false;
@@ -64,549 +155,1381 @@ async function loadAlerts(showSpinner = true) {
 }
 
 function applyIncomingAlert(alert: AlertRecord) {
-  latestEvent.value =
-    alert.status === "resolved"
-      ? `Resolved: ${alert.labels.alertname ?? alert.fingerprint}`
-      : `Firing: ${alert.labels.alertname ?? alert.fingerprint}`;
-  lastUpdatedAt.value = new Date().toLocaleString();
-
-  const nextAlerts = [...alerts.value];
-  const existingIndex = nextAlerts.findIndex(
-    (item) => item.fingerprint === alert.fingerprint,
+  const idx = alerts.value.findIndex(
+    (a) => a.fingerprint === alert.fingerprint,
   );
-
   if (alert.status === "resolved") {
-    if (existingIndex >= 0) {
-      nextAlerts.splice(existingIndex, 1);
-    }
-    alerts.value = nextAlerts;
+    if (idx !== -1) alerts.value.splice(idx, 1);
     return;
   }
-
-  if (existingIndex >= 0) {
-    nextAlerts.splice(existingIndex, 1);
+  if (idx !== -1) {
+    alerts.value[idx] = alert;
+  } else {
+    alerts.value.unshift(alert);
+    const sev = alert.labels.severity ?? "info";
+    const sevLabel = severityLabel(sev);
+    const name = alert.labels.alertname || "未知告警";
+    showToast(`新${sevLabel}告警: ${name}`, sev);
   }
-
-  nextAlerts.unshift(alert);
-  alerts.value = nextAlerts.sort(
-    (left, right) =>
-      new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime(),
-  );
 }
 
-const { connectionState, connect } = useAlertsWebSocket(applyIncomingAlert);
-
-function formatTime(value: string) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  return new Date(value).toLocaleString();
+function applyIncomingHosts(newHosts: Host[]) {
+  hosts.value = newHosts;
+  lastUpdateTime.value = Date.now();
 }
 
-function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
-  selectedSeverity.value = value;
+function showToast(message: string, severity: string) {
+  const id = ++toastId;
+  toasts.value.push({ id, message, severity });
+  window.setTimeout(() => {
+    toasts.value = toasts.value.filter((t) => t.id !== id);
+  }, 4000);
+}
+
+function updateBeijingTime() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const cst = new Date(utc + 3600000 * 8);
+  beijingTime.value = cst.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function updateAgoText() {
+  const diff = Math.floor((Date.now() - lastUpdateTime.value) / 1000);
+  if (diff < 5) {
+    updateAgo.value = "刚刚更新";
+  } else if (diff < 60) {
+    updateAgo.value = `${diff}秒前更新`;
+  } else if (diff < 3600) {
+    updateAgo.value = `${Math.floor(diff / 60)}分钟前更新`;
+  } else {
+    updateAgo.value = `${Math.floor(diff / 3600)}小时前更新`;
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+    isFullscreen.value = true;
+  } else {
+    document.exitFullscreen().catch(() => {});
+    isFullscreen.value = false;
+  }
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    return;
+  }
+  if (e.key === "r" || e.key === "R") {
+    e.preventDefault();
+    refreshAll();
+  } else if (e.key === "f" || e.key === "F") {
+    e.preventDefault();
+    toggleFullscreen();
+  }
 }
 
 onMounted(() => {
-  void loadAlerts();
+  refreshAll();
   connect();
+  updateBeijingTime();
+  updateAgoText();
+  beijingTimer.value = window.setInterval(updateBeijingTime, 1000);
+  updateAgoTimer.value = window.setInterval(updateAgoText, 5000);
+  window.addEventListener("keydown", onKeydown);
+  document.addEventListener("fullscreenchange", () => {
+    isFullscreen.value = !!document.fullscreenElement;
+  });
+});
+
+onBeforeUnmount(() => {
+  disconnect();
+  if (beijingTimer.value !== null) clearInterval(beijingTimer.value);
+  if (updateAgoTimer.value !== null) clearInterval(updateAgoTimer.value);
+  window.removeEventListener("keydown", onKeydown);
 });
 </script>
 
 <template>
-  <main class="shell">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Stage 3.9</p>
-        <h1>Active alert console</h1>
-        <p class="lede">
-          This page now consumes <code>/api/v1/alerts/active</code> for initial state and
-          keeps the alert feed fresh through <code>/ws/alerts</code>.
-        </p>
+  <div class="app-container">
+    <!-- Toast Notifications -->
+    <div class="toast-container">
+      <transition-group name="toast">
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="toast"
+          :class="severityClass(toast.severity)"
+        >
+          <span class="toast-severity">{{ severityLabel(toast.severity) }}</span>
+          <span class="toast-message">{{ toast.message }}</span>
+        </div>
+      </transition-group>
+    </div>
 
-        <div class="hero-badges">
-          <span class="hero-badge">
-            <span class="hero-badge-dot hero-badge-dot-live" />
-            {{ connectionLabel }}
-          </span>
-          <span class="hero-badge">
-            <span class="hero-badge-dot hero-badge-dot-alert" />
-            {{ latestEvent || "Waiting for next alert event" }}
-          </span>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <div class="logo-icon"></div>
+          <div class="logo-text">
+            <h1>服务监控大屏</h1>
+            <p class="logo-sub">实时主机指标与告警推送</p>
+          </div>
         </div>
       </div>
+      <div class="header-right">
+        <div class="update-ago">{{ updateAgo }}</div>
+        <div class="clock">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <span>{{ beijingTime }}</span>
+        </div>
+        <button class="fullscreen-btn" title="全屏 (F)" @click="toggleFullscreen">
+          <svg
+            v-if="!isFullscreen"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+          </svg>
+          <svg
+            v-else
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+          </svg>
+        </button>
+        <div class="ws-status" :class="'ws-' + connectionState">
+          <span class="ws-dot"></span>
+          <span>{{ connectionLabel }}</span>
+        </div>
+      </div>
+    </header>
 
-      <div class="hero-stats">
-        <article class="stat-card">
-          <span class="stat-label">Active alerts</span>
-          <strong class="stat-value">{{ alerts.length }}</strong>
-        </article>
-        <article class="stat-card stat-card-critical">
-          <span class="stat-label">Critical</span>
-          <strong class="stat-value">{{ criticalCount }}</strong>
-        </article>
-        <article class="stat-card stat-card-warning">
-          <span class="stat-label">Warning</span>
-          <strong class="stat-value">{{ warningCount }}</strong>
-        </article>
-        <article class="stat-card" :class="`stat-card-${connectionState}`">
-          <span class="stat-label">WebSocket</span>
-          <strong class="stat-value">{{ connectionLabel }}</strong>
-        </article>
+    <!-- Stats Row -->
+    <section class="stats-row">
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--accent-soft); color: var(--accent)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="2" y="2" width="20" height="8" rx="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value">{{ hosts.length }}</span>
+          <span class="stat-label">在线主机</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--info-soft); color: var(--info)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+            />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value">{{ alerts.length }}</span>
+          <span class="stat-label">活跃告警</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--danger-soft); color: var(--danger)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--danger)">{{ criticalCount }}</span>
+          <span class="stat-label">严重</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--warning-soft); color: var(--warning)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+            />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--warning)">{{ warningCount }}</span>
+          <span class="stat-label">警告</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: rgba(6, 182, 212, 0.12); color: var(--info)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--info)">{{ infoCount }}</span>
+          <span class="stat-label">提示</span>
+        </div>
       </div>
     </section>
 
+    <!-- Hosts Section -->
     <section class="panel">
-      <header class="panel-header">
-        <div class="panel-heading">
-          <h2>Alert feed</h2>
-          <p class="panel-meta">
-            {{ filteredAlerts.length }} shown
-            <span v-if="lastUpdatedAt"> · Last updated: {{ lastUpdatedAt }}</span>
-          </p>
-          <p v-if="latestEvent" class="panel-meta panel-meta-event">{{ latestEvent }}</p>
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            style="color: var(--accent)"
+          >
+            <rect x="2" y="2" width="20" height="8" rx="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" />
+          </svg>
+          <h2>主机指标</h2>
         </div>
+        <span class="panel-badge">WebSocket 实时推送</span>
+      </div>
 
+      <!-- Skeleton Loading -->
+      <div v-if="loading" class="hosts-grid">
+        <div v-for="n in 3" :key="n" class="host-card skeleton">
+          <div class="skeleton-header">
+            <div class="skeleton-dot"></div>
+            <div class="skeleton-line" style="width: 60%"></div>
+          </div>
+          <div class="skeleton-metric">
+            <div class="skeleton-label"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-value"></div>
+          </div>
+          <div class="skeleton-metric">
+            <div class="skeleton-label"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-value"></div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="hosts.length === 0" class="empty-state">
+        <div class="empty-icon">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <rect x="2" y="2" width="20" height="8" rx="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" />
+          </svg>
+        </div>
+        <p>暂无主机数据</p>
+        <p class="empty-sub">Prometheus 尚未发现任何主机</p>
+      </div>
+      <div v-else class="hosts-grid">
+        <div v-for="host in hosts" :key="host.instance" class="host-card">
+          <div class="host-header">
+            <div class="host-name-row">
+              <span
+                class="status-dot"
+                :class="isHostUp(host.status) ? 'dot-up' : 'dot-down'"
+              ></span>
+              <span class="host-name">{{ host.instance }}</span>
+            </div>
+            <span
+              class="host-status"
+              :class="isHostUp(host.status) ? 'status-up' : 'status-down'"
+            >
+              {{ isHostUp(host.status) ? "在线" : "离线" }}
+            </span>
+          </div>
+          <div class="host-metrics">
+            <div class="metric-row">
+              <div class="metric-label">CPU</div>
+              <div class="metric-bar-bg">
+                <div
+                  class="metric-bar-fill"
+                  :style="{
+                    width: Math.min(host.cpu, 100) + '%',
+                    background: cpuColor(host.cpu),
+                  }"
+                />
+              </div>
+              <div class="metric-value" :style="{ color: cpuColor(host.cpu) }">
+                {{ host.cpu.toFixed(1) }}%
+              </div>
+            </div>
+            <div class="metric-row">
+              <div class="metric-label">内存</div>
+              <div class="metric-bar-bg">
+                <div
+                  class="metric-bar-fill"
+                  :style="{
+                    width: Math.min(host.memory, 100) + '%',
+                    background: memoryColor(host.memory),
+                  }"
+                />
+              </div>
+              <div
+                class="metric-value"
+                :style="{ color: memoryColor(host.memory) }"
+              >
+                {{ host.memory.toFixed(1) }}%
+              </div>
+            </div>
+          </div>
+          <div class="host-footer">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            最后采集: {{ formatTime(host.lastScrape) }}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Alerts Section -->
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            style="color: var(--warning)"
+          >
+            <path
+              d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+            />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <h2>告警列表</h2>
+        </div>
         <div class="panel-actions">
-          <div class="filter-pill-group">
+          <div class="filter-group">
             <button
               type="button"
-              class="filter-pill"
-              :class="{ 'filter-pill-active': selectedSeverity === 'all' }"
+              class="filter-btn"
+              :class="{ active: selectedSeverity === 'all' }"
               @click="setSeverityFilter('all')"
             >
-              All
+              全部
             </button>
             <button
               type="button"
-              class="filter-pill"
-              :class="{ 'filter-pill-active': selectedSeverity === 'critical' }"
+              class="filter-btn"
+              :class="{ active: selectedSeverity === 'critical' }"
               @click="setSeverityFilter('critical')"
             >
-              Critical
+              严重
             </button>
             <button
               type="button"
-              class="filter-pill"
-              :class="{ 'filter-pill-active': selectedSeverity === 'warning' }"
+              class="filter-btn"
+              :class="{ active: selectedSeverity === 'warning' }"
               @click="setSeverityFilter('warning')"
             >
-              Warning
+              警告
             </button>
             <button
               type="button"
-              class="filter-pill"
-              :class="{ 'filter-pill-active': selectedSeverity === 'info' }"
+              class="filter-btn"
+              :class="{ active: selectedSeverity === 'info' }"
               @click="setSeverityFilter('info')"
             >
-              Info
+              提示
             </button>
           </div>
-
-          <button class="refresh-button" type="button" @click="loadAlerts(false)" :disabled="refreshing">
-            {{ refreshing ? "Refreshing..." : "Refresh" }}
+          <button
+            type="button"
+            class="refresh-btn"
+            :disabled="refreshing"
+            @click="refreshAll"
+          >
+            <svg
+              v-if="!refreshing"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            <span v-else class="spin"></span>
+            {{ refreshing ? "刷新中..." : "刷新" }}
           </button>
         </div>
-      </header>
-
-      <div v-if="loading" class="state-card">Loading alerts...</div>
-      <div v-else-if="errorMessage" class="state-card state-card-error">{{ errorMessage }}</div>
-      <div v-else-if="alerts.length === 0" class="state-card state-card-empty">
-        <strong>Everything looks calm.</strong>
-        <span>No active alerts right now.</span>
-      </div>
-      <div v-else-if="filteredAlerts.length === 0" class="state-card state-card-empty">
-        <strong>No alerts in this filter.</strong>
-        <span>Try switching back to All to see the full active set.</span>
       </div>
 
-      <div v-else class="alert-grid">
-        <article
+      <div v-if="error" class="error-banner">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="15" y1="9" x2="9" y2="15" />
+          <line x1="9" y1="9" x2="15" y2="15" />
+        </svg>
+        {{ error }}
+      </div>
+
+      <div v-else-if="alerts.length === 0" class="empty-state">
+        <div class="empty-icon" style="color: var(--success)">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+        </div>
+        <p style="color: var(--success); font-weight: 600">一切正常</p>
+        <p class="empty-sub">当前无活跃告警</p>
+      </div>
+
+      <div v-else-if="filteredAlerts.length === 0" class="empty-state">
+        <p>该级别下无告警</p>
+      </div>
+
+      <div v-else class="alert-list">
+        <div
           v-for="alert in filteredAlerts"
           :key="alert.fingerprint"
           class="alert-card"
-          :class="`alert-card-${alert.labels.severity ?? 'info'}`"
+          :class="severityClass(alert.labels.severity)"
         >
-          <header class="alert-card-header">
-            <div>
-              <p class="alert-name">{{ alert.labels.alertname ?? "UnknownAlert" }}</p>
-              <p class="alert-instance">{{ alert.labels.instance ?? "unknown-instance" }}</p>
+          <div class="alert-top">
+            <span
+              class="alert-severity"
+              :class="severityClass(alert.labels.severity)"
+            >
+              {{ severityLabel(alert.labels.severity) }}
+            </span>
+            <span class="alert-time">{{ formatTime(alert.startsAt) }}</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-name">
+              {{ alert.labels.alertname || "未知告警" }}
             </div>
-            <span class="severity-pill">{{ alert.labels.severity ?? "info" }}</span>
-          </header>
-
-          <p class="alert-summary">
-            {{ alert.annotations.summary ?? "No summary provided." }}
-          </p>
-
-          <dl class="alert-meta">
-            <div>
-              <dt>Status</dt>
-              <dd class="status-value">{{ alert.status }}</dd>
+            <div class="alert-instance">
+              {{ alert.labels.instance || "" }}
             </div>
-            <div>
-              <dt>Started</dt>
-              <dd>{{ formatTime(alert.startsAt) }}</dd>
-            </div>
-            <div>
-              <dt>Fingerprint</dt>
-              <dd class="fingerprint">{{ alert.fingerprint }}</dd>
-            </div>
-          </dl>
-        </article>
+            <p class="alert-summary">
+              {{ alert.annotations.summary || alert.annotations.description || "" }}
+            </p>
+            <p
+              v-if="alert.annotations.description && alert.annotations.summary"
+              class="alert-desc"
+            >
+              {{ alert.annotations.description }}
+            </p>
+          </div>
+        </div>
       </div>
     </section>
-  </main>
+  </div>
 </template>
 
 <style scoped>
-.shell {
-  width: min(1120px, calc(100vw - 32px));
+.app-container {
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 0 56px;
+  padding: 1.5rem;
+  min-height: 100vh;
 }
 
-.hero {
-  display: grid;
-  gap: 24px;
-  align-items: end;
-  grid-template-columns: 1.2fr 0.8fr;
-  margin-bottom: 28px;
-}
-
-.eyebrow {
-  margin: 0 0 10px;
-  color: var(--info);
-  font-size: 0.88rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.hero-copy h1 {
-  margin: 0;
-  font-size: clamp(2.4rem, 6vw, 4.8rem);
-  line-height: 0.96;
-  letter-spacing: -0.05em;
-}
-
-.lede {
-  max-width: 58ch;
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.7;
-}
-
-.lede code {
-  color: #ffe4bf;
-}
-
-.hero-badges {
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
 }
 
-.hero-badge {
-  display: inline-flex;
+.toast {
+  pointer-events: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  min-width: 280px;
+  max-width: 400px;
+  box-shadow: var(--shadow-md);
+  display: flex;
   align-items: center;
-  gap: 10px;
-  max-width: 100%;
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(10, 14, 18, 0.42);
-  color: #f8f4ea;
-  font-size: 0.9rem;
+  gap: 0.5rem;
+  backdrop-filter: blur(8px);
 }
 
-.hero-badge-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  flex: 0 0 auto;
+.toast.severity-critical {
+  border-left: 3px solid var(--danger);
 }
 
-.hero-badge-dot-live {
+.toast.severity-warning {
+  border-left: 3px solid var(--warning);
+}
+
+.toast.severity-info {
+  border-left: 3px solid var(--info);
+}
+
+.toast-severity {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.toast.severity-critical .toast-severity {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.toast.severity-warning .toast-severity {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.toast.severity-info .toast-severity {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.toast-message {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
+}
+
+.toast-enter-from {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent), #6366f1);
+  box-shadow: 0 0 16px var(--accent-glow);
+  position: relative;
+}
+
+.logo-icon::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+}
+
+.logo-text h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.logo-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.update-ago {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.clock {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.clock svg {
+  color: var(--accent);
+}
+
+.fullscreen-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  background: var(--bg-card);
+  transition: all 0.15s;
+}
+
+.fullscreen-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ws-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.ws-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-connected {
+  background: var(--success-soft);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--success);
+}
+
+.ws-connected .ws-dot {
   background: var(--success);
-  box-shadow: 0 0 0 6px rgba(104, 211, 145, 0.12);
+  box-shadow: 0 0 6px var(--success);
 }
 
-.hero-badge-dot-alert {
-  background: var(--accent);
-  box-shadow: 0 0 0 6px rgba(255, 143, 67, 0.12);
+.ws-connecting {
+  background: var(--warning-soft);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
 }
 
-.hero-stats {
+.ws-connecting .ws-dot {
+  background: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+.ws-disconnected {
+  background: var(--danger-soft);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+}
+
+.ws-disconnected .ws-dot {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Stats Row */
+.stats-row {
   display: grid;
-  gap: 14px;
-}
-
-.stat-card,
-.panel,
-.state-card,
-.alert-card {
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 18px 40px rgba(5, 8, 12, 0.22);
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .stat-card {
-  padding: 20px 22px;
-  border-radius: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  transition: all 0.2s ease;
 }
 
-.stat-card-critical {
-  border-color: rgba(255, 92, 87, 0.34);
+.stat-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
-.stat-card-warning {
-  border-color: rgba(255, 143, 67, 0.32);
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.stat-card-connected {
-  border-color: rgba(104, 211, 145, 0.32);
-}
-
-.stat-card-connecting {
-  border-color: rgba(124, 199, 226, 0.32);
-}
-
-.stat-card-disconnected {
-  border-color: rgba(255, 92, 87, 0.26);
-}
-
-.stat-label {
-  display: block;
-  color: var(--muted);
-  font-size: 0.92rem;
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .stat-value {
-  display: block;
-  margin-top: 8px;
-  font-size: 2rem;
+  font-size: 1.5rem;
+  font-weight: 700;
   line-height: 1;
+  color: var(--text-primary);
 }
 
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Panel */
 .panel {
-  padding: 26px;
-  border-radius: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(8px);
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
-.panel-heading {
-  min-width: 0;
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-title h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.panel-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .panel-actions {
   display: flex;
-  gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 0.75rem;
 }
 
-.filter-pill-group {
-  display: inline-flex;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Skeleton */
+.skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
-.filter-pill {
-  border: 0;
-  border-radius: 999px;
-  padding: 10px 14px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease;
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
-.filter-pill-active {
-  background: rgba(255, 143, 67, 0.16);
-  color: #ffe2ba;
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-.panel-header h2 {
-  margin: 0;
-  font-size: 1.5rem;
+.skeleton-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-color);
 }
 
-.panel-meta {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 0.92rem;
+.skeleton-line {
+  height: 16px;
+  background: var(--border-color);
+  border-radius: 4px;
 }
 
-.panel-meta-event {
-  color: #ffe4bf;
-}
-
-.refresh-button {
-  border: 0;
-  border-radius: 999px;
-  padding: 12px 18px;
-  color: #1a140d;
-  background: linear-gradient(135deg, #ffcf90 0%, #ff8f43 100%);
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.refresh-button:disabled {
-  opacity: 0.62;
-  cursor: wait;
-}
-
-.state-card {
-  border-radius: 20px;
-  padding: 26px 22px;
-  color: var(--muted);
+.skeleton-metric {
   display: grid;
-  gap: 8px;
+  grid-template-columns: 2.5rem 1fr 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
-.state-card-error {
-  border-color: rgba(255, 92, 87, 0.38);
-  color: #ffd1cf;
+.skeleton-label {
+  height: 12px;
+  background: var(--border-color);
+  border-radius: 3px;
 }
 
-.state-card-empty strong {
-  color: #fff2d8;
-  font-size: 1.05rem;
+.skeleton-bar {
+  height: 8px;
+  background: var(--border-color);
+  border-radius: 4px;
 }
 
-.alert-grid {
+.skeleton-value {
+  height: 12px;
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+/* Hosts Grid */
+.hosts-grid {
   display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
 }
 
-.alert-card {
-  border-radius: 22px;
-  padding: 20px;
+.host-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
 }
 
-.alert-card::after {
+.host-card::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 36%);
-  pointer-events: none;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.02),
+    transparent
+  );
+  transition: left 0.5s ease;
 }
 
-.alert-card-critical {
-  border-color: rgba(255, 92, 87, 0.44);
+.host-card:hover::before {
+  left: 100%;
 }
 
-.alert-card-warning {
-  border-color: rgba(255, 143, 67, 0.44);
+.host-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
 }
 
-.alert-card-header {
+.host-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.host-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-up {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.dot-down {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+
+.host-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.host-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2em 0.6em;
+  border-radius: var(--radius-sm);
+}
+
+.status-up {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-down {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.host-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.metric-bar-bg {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.metric-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.host-footer {
+  margin-top: 0.875rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Filter */
+.filter-group {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-secondary);
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.filter-btn {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.35em 0.75em;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+
+.filter-btn:hover {
+  color: var(--text-secondary);
+}
+
+.filter-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Refresh Button */
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  transition: all 0.15s;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--text-muted);
+}
+
+.empty-icon {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+}
+
+.empty-sub {
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+/* Error Banner */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--danger-soft);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* Alert List */
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.alert-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.alert-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.alert-card.severity-critical {
+  border-left-color: var(--danger);
+}
+
+.alert-card.severity-warning {
+  border-left-color: var(--warning);
+}
+
+.alert-card.severity-info {
+  border-left-color: var(--info);
+}
+
+.alert-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.alert-severity {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.6em;
+  border-radius: var(--radius-sm);
+}
+
+.alert-severity.severity-critical {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.alert-severity.severity-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.alert-severity.severity-info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.alert-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
 .alert-name {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.15rem;
 }
 
 .alert-instance {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.severity-pill {
-  border-radius: 999px;
-  padding: 7px 10px;
-  background: var(--accent-soft);
-  color: #ffd7ae;
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
 }
 
 .alert-summary {
-  margin: 18px 0;
-  color: #f6efe3;
-  line-height: 1.65;
-}
-
-.alert-meta {
-  display: grid;
-  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
   margin: 0;
 }
 
-.alert-meta div {
-  display: grid;
-  gap: 4px;
+.alert-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.35rem 0 0;
 }
 
-.alert-meta dt {
-  color: var(--muted);
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
+/* Responsive */
+@media (max-width: 768px) {
+  .app-container {
+    padding: 1rem;
+  }
 
-.alert-meta dd {
-  margin: 0;
-}
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
 
-.status-value {
-  text-transform: capitalize;
-}
+  .header-right {
+    flex-wrap: wrap;
+    width: 100%;
+  }
 
-.fingerprint {
-  word-break: break-all;
-  color: #ffe9c8;
-  font-size: 0.92rem;
-}
-
-@media (max-width: 860px) {
-  .hero {
-    grid-template-columns: 1fr;
+  .stats-row {
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .panel-header {
     flex-direction: column;
-    align-items: stretch;
-  }
-
-  .refresh-button {
-    width: 100%;
+    align-items: flex-start;
   }
 
   .panel-actions {
     width: 100%;
-    align-items: stretch;
+    justify-content: space-between;
   }
 
-  .filter-pill-group {
-    width: 100%;
-    justify-content: space-between;
+  .hosts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toast-container {
+    left: 1rem;
+    right: 1rem;
+  }
+
+  .toast {
+    max-width: 100%;
+    min-width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>
