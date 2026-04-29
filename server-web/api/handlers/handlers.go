@@ -33,14 +33,14 @@ type response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
-func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
+func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
-		promClient:    promClient,
-		cacheClient:   cacheClient,
-		readyTimeout:  readyTimeout,
-		requestTimeout: 5 * time.Second,
-		hostsTTL:      hostsTTL,
-		websocketHub:  websocketHub,
+		promClient:     promClient,
+		cacheClient:    cacheClient,
+		readyTimeout:   readyTimeout,
+		requestTimeout: requestTimeout,
+		hostsTTL:       hostsTTL,
+		websocketHub:   websocketHub,
 	}
 }
 

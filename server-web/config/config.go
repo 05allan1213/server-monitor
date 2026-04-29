@@ -38,10 +38,11 @@ func Load() Config {
 }
 
 func getEnv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
 	}
-	return fallback
+	return value
 }
 
 func getEnvInt(key string, fallback int) int {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,7 +23,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		return nil, err
 	}
 
-	handler := handlers.NewHandler(promClient, cacheClient, cfg.ReadyTimeout, cfg.HostsCacheTTL, websocketHub)
+	handler := handlers.NewHandler(promClient, cacheClient, cfg.ReadyTimeout, cfg.RequestTimeout, cfg.HostsCacheTTL, websocketHub)
 
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
@@ -43,6 +44,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 func serveStatic(staticDir string) gin.HandlerFunc {
 	fileServer := http.FileServer(http.Dir(staticDir))
+	absStaticDir, _ := filepath.Abs(staticDir)
 
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -65,14 +67,19 @@ func serveStatic(staticDir string) gin.HandlerFunc {
 			return
 		}
 
-		filePath := filepath.Join(staticDir, filepath.Clean(path))
+		filePath := filepath.Join(absStaticDir, filepath.Clean(path))
+		if !strings.HasPrefix(filePath, absStaticDir+string(os.PathSeparator)) && filePath != absStaticDir {
+			c.Next()
+			return
+		}
+
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			c.Abort()
 			return
 		}
 
-		indexPath := filepath.Join(staticDir, "index.html")
+		indexPath := filepath.Join(absStaticDir, "index.html")
 		if _, err := os.Stat(indexPath); err == nil {
 			c.Request.URL.Path = "/"
 			fileServer.ServeHTTP(c.Writer, c.Request)
