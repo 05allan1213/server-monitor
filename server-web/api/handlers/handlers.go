@@ -18,9 +18,22 @@ import (
 	ws "server-web/websocket"
 )
 
+type cacheClient interface {
+	Enabled() bool
+	Ping(ctx context.Context) error
+	Get(ctx context.Context, key string) ([]byte, bool)
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	HSet(ctx context.Context, key, field string, value []byte) error
+	HDel(ctx context.Context, key, field string) error
+	HGetAll(ctx context.Context, key string) (map[string]string, error)
+	LPushTrim(ctx context.Context, key string, maxLen int64, value []byte) error
+	LRange(ctx context.Context, key string, start, stop int64) ([]string, error)
+	Publish(ctx context.Context, channel string, message []byte) error
+}
+
 type Handler struct {
 	promClient     *promclient.Client
-	cacheClient    *rediscache.Client
+	cacheClient    cacheClient
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
 	hostsTTL       time.Duration
@@ -33,7 +46,7 @@ type response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
-func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
+func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
 		cacheClient:    cacheClient,
@@ -204,11 +217,9 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 		}
 
 		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, message); err != nil {
-			c.JSON(http.StatusBadGateway, response{
-				Status: "error",
-				Error:  fmt.Sprintf("publish alert event failed: %v", err),
-			})
-			return
+			// Active state and history are already stored; failing the webhook here
+			// would trigger retries and duplicate history entries.
+			slog.Warn("publish alert event failed", "fingerprint", alert.Fingerprint, "status", alert.Status, "error", err)
 		}
 	}
 
