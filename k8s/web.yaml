@@ -49,18 +49,36 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
-            - name: GIN_MODE
-              value: release
             - name: PROMETHEUS_URL
-              value: http://prometheus:9090
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: PROMETHEUS_URL
             - name: REDIS_ADDR
-              value: redis:6379
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: REDIS_ADDR
+            - name: GIN_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: GIN_MODE
             - name: READY_TIMEOUT_SECONDS
-              value: "3"
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: READY_TIMEOUT_SECONDS
             - name: REQUEST_TIMEOUT_SECONDS
-              value: "5"
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: REQUEST_TIMEOUT_SECONDS
             - name: HOSTS_CACHE_TTL_SECONDS
-              value: "30"
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: HOSTS_CACHE_TTL_SECONDS
 
 ---
 # ------------------------------------------

@@ -12,3 +12,7 @@ metadata:
 data:
   PROMETHEUS_URL: http://prometheus:9090
   REDIS_ADDR: redis:6379
+  GIN_MODE: release
+  READY_TIMEOUT_SECONDS: "3"
+  REQUEST_TIMEOUT_SECONDS: "5"
+  HOSTS_CACHE_TTL_SECONDS: "30"
