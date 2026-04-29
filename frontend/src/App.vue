@@ -11,7 +11,8 @@ const alertEvents = ref<AlertEvent[]>([]);
 const hosts = ref<Host[]>([]);
 const loading = ref(true);
 const refreshing = ref(false);
-const error = ref("");
+const alertsError = ref("");
+const alertEventsError = ref("");
 const selectedSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 const beijingTime = ref("");
 const beijingTimer = ref<number | null>(null);
@@ -129,21 +130,21 @@ function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
 
 async function loadAlerts() {
   try {
-    error.value = "";
+    alertsError.value = "";
     const data = await fetchActiveAlerts();
     alerts.value = data;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "加载告警失败";
+    alertsError.value = err instanceof Error ? err.message : "加载告警失败";
   }
 }
 
 async function loadAlertEvents() {
   try {
-    error.value = "";
+    alertEventsError.value = "";
     const data = await fetchAlertEvents();
     alertEvents.value = data;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "加载事件失败";
+    alertEventsError.value = err instanceof Error ? err.message : "加载事件失败";
   }
 }
 
@@ -735,7 +736,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="error" class="error-banner">
+      <div v-if="alertsError" class="error-banner">
         <svg
           width="16"
           height="16"
@@ -748,7 +749,7 @@ onBeforeUnmount(() => {
           <line x1="15" y1="9" x2="9" y2="15" />
           <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
-        {{ error }}
+        {{ alertsError }}
       </div>
 
       <div v-else-if="alerts.length === 0" class="empty-state">
@@ -829,7 +830,23 @@ onBeforeUnmount(() => {
         <span class="panel-badge event-badge">Webhook 历史流</span>
       </div>
 
-      <div v-if="alertEvents.length === 0" class="empty-state">
+      <div v-if="alertEventsError" class="error-banner">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="15" y1="9" x2="9" y2="15" />
+          <line x1="9" y1="9" x2="15" y2="15" />
+        </svg>
+        {{ alertEventsError }}
+      </div>
+
+      <div v-else-if="alertEvents.length === 0" class="empty-state">
         <div class="empty-icon">
           <svg
             width="48"
