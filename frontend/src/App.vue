@@ -46,8 +46,9 @@ const infoCount = computed(
     alerts.value.filter((a) => (a.labels.severity ?? "info") === "info")
       .length,
 );
-const latestAlertEvents = computed(() => alertEvents.value.slice(0, 8));
 const alertEventsLimit = 8;
+const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
+const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
 const filteredAlerts = computed(() => {
   if (selectedSeverity.value === "all") return alerts.value;
@@ -55,6 +56,23 @@ const filteredAlerts = computed(() => {
     (a) => (a.labels.severity ?? "info") === selectedSeverity.value,
   );
 });
+
+const filteredAlertEvents = computed(() => {
+  return alertEvents.value.filter((event) => {
+    const matchesStatus =
+      selectedEventStatus.value === "all" ||
+      event.status === selectedEventStatus.value;
+    const matchesSeverity =
+      selectedEventSeverity.value === "all" ||
+      (event.labels.severity ?? "info") === selectedEventSeverity.value;
+
+    return matchesStatus && matchesSeverity;
+  });
+});
+
+const latestAlertEvents = computed(() =>
+  filteredAlertEvents.value.slice(0, alertEventsLimit),
+);
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -127,6 +145,16 @@ function formatTime(iso: string): string {
 
 function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
   selectedSeverity.value = value;
+}
+
+function setEventStatusFilter(value: "all" | "firing" | "resolved") {
+  selectedEventStatus.value = value;
+}
+
+function setEventSeverityFilter(
+  value: "all" | "critical" | "warning" | "info",
+) {
+  selectedEventSeverity.value = value;
 }
 
 async function loadAlerts() {
@@ -828,7 +856,69 @@ onBeforeUnmount(() => {
           </svg>
           <h2>最近事件</h2>
         </div>
-        <span class="panel-badge event-badge">Webhook 历史流</span>
+        <div class="panel-actions panel-actions-wrap">
+          <div class="filter-group">
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventStatus === 'all' }"
+              @click="setEventStatusFilter('all')"
+            >
+              全部状态
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventStatus === 'firing' }"
+              @click="setEventStatusFilter('firing')"
+            >
+              触发
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventStatus === 'resolved' }"
+              @click="setEventStatusFilter('resolved')"
+            >
+              恢复
+            </button>
+          </div>
+          <div class="filter-group">
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventSeverity === 'all' }"
+              @click="setEventSeverityFilter('all')"
+            >
+              全部级别
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventSeverity === 'critical' }"
+              @click="setEventSeverityFilter('critical')"
+            >
+              严重
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventSeverity === 'warning' }"
+              @click="setEventSeverityFilter('warning')"
+            >
+              警告
+            </button>
+            <button
+              type="button"
+              class="filter-btn"
+              :class="{ active: selectedEventSeverity === 'info' }"
+              @click="setEventSeverityFilter('info')"
+            >
+              提示
+            </button>
+          </div>
+          <span class="panel-badge event-badge">Webhook 历史流</span>
+        </div>
       </div>
 
       <div v-if="alertEventsError" class="error-banner">
@@ -862,6 +952,11 @@ onBeforeUnmount(() => {
         </div>
         <p>暂无最近事件</p>
         <p class="empty-sub">新告警或恢复事件会在这里按时间倒序展示</p>
+      </div>
+
+      <div v-else-if="filteredAlertEvents.length === 0" class="empty-state">
+        <p>当前筛选条件下没有事件</p>
+        <p class="empty-sub">可以切换状态或级别查看其他最近事件</p>
       </div>
 
       <div v-else class="event-list">
@@ -1252,6 +1347,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.panel-actions-wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Skeleton */
@@ -1750,6 +1850,10 @@ onBeforeUnmount(() => {
   .panel-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .panel-actions-wrap {
+    justify-content: flex-start;
   }
 
   .hosts-grid {
