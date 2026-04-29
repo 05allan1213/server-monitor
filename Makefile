@@ -40,15 +40,18 @@ dev-deps:
 	@echo "  Prometheus:   http://localhost:9091"
 	@echo "  AlertManager: http://localhost:9093"
 	@echo "  server-probe: http://localhost:9090"
+	@echo "提示: Prometheus 首次抓取和规则加载通常需要 15-30 秒"
 
 dev-web:
 	@echo "本地启动 server-web..."
 	@echo "环境变量: PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379"
+	@echo "访问地址: http://localhost:8080/healthz 和 http://localhost:8080/readyz"
 	cd server-web && PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 GIN_MODE=debug go run main.go
 
 dev-frontend:
 	@echo "本地启动前端开发服务器..."
 	@echo "Vite 代理已配置: /api -> localhost:8080, /ws -> ws://localhost:8080"
+	@echo "访问地址: http://localhost:5173"
 	cd frontend && npm run dev
 
 dev-stop:
@@ -66,7 +69,11 @@ docker:
 docker-up:
 	@echo "启动 Docker Compose..."
 	docker compose up -d
-	@echo "服务已启动，访问 http://localhost:8080"
+	@echo "服务已启动"
+	@echo "  监控大屏:     http://localhost:8080"
+	@echo "  Prometheus:   http://localhost:9091"
+	@echo "  AlertManager: http://localhost:9093"
+	@echo "提示: 首次启动后等待 15-30 秒，再访问 /readyz 或前端页面"
 
 docker-down:
 	@echo "停止 Docker Compose..."

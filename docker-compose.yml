@@ -72,3 +72,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      prometheus:
+        condition: service_started
+      alertmanager:
+        condition: service_started

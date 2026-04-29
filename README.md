@@ -51,6 +51,11 @@ make docker-up
 
 访问 <http://localhost:8080> 查看监控大屏。
 
+说明：
+- `server-web` 容器会同时托管前端静态文件
+- 首次启动后，Prometheus 抓取和告警规则加载通常需要 `15-30` 秒
+- 如果刚启动就访问 `/readyz`，短时间内返回未就绪是正常现象
+
 ### 方式二：开发模式（推荐开发阶段使用）
 
 无需构建 Docker 镜像，改代码后秒级生效：
@@ -73,6 +78,37 @@ make dev-frontend
 ```bash
 make dev-stop
 ```
+
+## 第一阶段验收步骤
+
+### Docker Compose 模式
+
+```bash
+make docker-up
+```
+
+建议按下面顺序检查：
+
+1. 打开 <http://localhost:8080>，确认前端页面可以访问。
+2. 打开 <http://localhost:8080/healthz>，确认返回 `healthy: true`。
+3. 打开 <http://localhost:8080/readyz>，确认 `prometheus` 和 `redis` 最终变为 `ok`。
+4. 打开 <http://localhost:9091/targets>，确认 `server-probe` target 为 `UP`。
+5. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
+6. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
+
+### 开发模式
+
+```bash
+make dev-deps
+make dev-web
+make dev-frontend
+```
+
+开发模式下的访问入口：
+- 前端开发页面：<http://localhost:5173>
+- 后端健康检查：<http://localhost:8080/healthz>
+- Prometheus：<http://localhost:9091>
+- AlertManager：<http://localhost:9093>
 
 ## Makefile 命令
 
@@ -186,6 +222,10 @@ server-monitor/
 | `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |
 | `STATIC_DIR`              | (空)                      | 前端静态文件目录   |
 | `GIN_MODE`                | `debug`                  | Gin 模式      |
+
+补充说明：
+- Docker Compose 部署时，`server-web` 镜像内默认使用 `STATIC_DIR=/app/static`
+- 本地开发模式通常不设置 `STATIC_DIR`，由 Vite 开发服务器在 `5173` 端口提供前端页面
 
 ## 技术栈
 

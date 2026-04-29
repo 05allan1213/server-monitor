@@ -19,12 +19,12 @@ import (
 )
 
 type Handler struct {
-	promClient    *promclient.Client
-	cacheClient   *rediscache.Client
-	readyTimeout  time.Duration
+	promClient     *promclient.Client
+	cacheClient    *rediscache.Client
+	readyTimeout   time.Duration
 	requestTimeout time.Duration
-	hostsTTL      time.Duration
-	websocketHub  *ws.Hub
+	hostsTTL       time.Duration
+	websocketHub   *ws.Hub
 }
 
 type response struct {
