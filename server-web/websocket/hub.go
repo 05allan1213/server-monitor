@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan []byte
+	done       chan struct{}
 }
 
 func NewHub() *Hub {
@@ -26,12 +28,20 @@ func NewHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, 64),
+		done:       make(chan struct{}),
 	}
 }
 
-func (h *Hub) Run() {
+func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			for client := range h.clients {
+				close(client.send)
+				client.conn.Close()
+				delete(h.clients, client)
+			}
+			return
 		case client := <-h.register:
 			h.clients[client] = true
 		case client := <-h.unregister:
