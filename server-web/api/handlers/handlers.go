@@ -238,15 +238,7 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 		return
 	}
 
-	alerts := make([]webhook.AlertRecord, 0, len(values))
-	for _, value := range values {
-		var alert webhook.AlertRecord
-		if err := json.Unmarshal([]byte(value), &alert); err != nil {
-			slog.Warn("skip corrupted alert data", "error", err)
-			continue
-		}
-		alerts = append(alerts, alert)
-	}
+	alerts := decodeActiveAlerts(values)
 
 	sort.Slice(alerts, func(i, j int) bool {
 		return alerts[i].StartsAt.After(alerts[j].StartsAt)
@@ -255,6 +247,33 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data:   alerts,
+	})
+}
+
+func (h *Handler) AlertEvents(c *gin.Context) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, response{
+			Status: "error",
+			Error:  "redis is required for alert events query",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
+	defer cancel()
+
+	values, err := h.cacheClient.LRange(ctx, rediscache.AlertEventsKey, 0, rediscache.AlertEventsMax-1)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("load alert events failed: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, response{
+		Status: "success",
+		Data:   decodeAlertEvents(values),
 	})
 }
 
@@ -304,4 +323,32 @@ func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
 	if err := h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL); err != nil {
 		slog.Error("cache hosts set failed", "error", err)
 	}
+}
+
+func decodeActiveAlerts(values map[string]string) []webhook.AlertRecord {
+	alerts := make([]webhook.AlertRecord, 0, len(values))
+	for _, value := range values {
+		var alert webhook.AlertRecord
+		if err := json.Unmarshal([]byte(value), &alert); err != nil {
+			slog.Warn("skip corrupted alert data", "error", err)
+			continue
+		}
+		alerts = append(alerts, alert)
+	}
+
+	return alerts
+}
+
+func decodeAlertEvents(values []string) []webhook.AlertEvent {
+	events := make([]webhook.AlertEvent, 0, len(values))
+	for _, value := range values {
+		var event webhook.AlertEvent
+		if err := json.Unmarshal([]byte(value), &event); err != nil {
+			slog.Warn("skip corrupted alert event", "error", err)
+			continue
+		}
+		events = append(events, event)
+	}
+
+	return events
 }

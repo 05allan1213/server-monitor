@@ -106,6 +106,14 @@ func (c *Client) LPushTrim(ctx context.Context, key string, maxLen int64, value 
 	return err
 }
 
+func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	if !c.Enabled() {
+		return nil, errors.New("redis is not enabled")
+	}
+
+	return c.client.LRange(ctx, key, start, stop).Result()
+}
+
 func (c *Client) Publish(ctx context.Context, channel string, message []byte) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")

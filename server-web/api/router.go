@@ -29,6 +29,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/readyz", handler.Readyz)
 	router.GET("/api/v1/hosts", handler.Hosts)
 	router.GET("/api/v1/alerts/active", handler.ActiveAlerts)
+	router.GET("/api/v1/alerts/events", handler.AlertEvents)
 	router.GET("/ws/alerts", handler.AlertsWebSocket)
 	router.POST("/api/v1/webhook/alertmanager", handler.AlertmanagerWebhook)
 
