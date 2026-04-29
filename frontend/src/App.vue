@@ -159,13 +159,13 @@ function severityLabel(severity: string | undefined): string {
 }
 
 function cpuColor(value: number): string {
-  if (value > 80) return "var(--danger)";
+  if (value >= 80) return "var(--danger)";
   if (value > 60) return "var(--warning)";
   return "var(--success)";
 }
 
 function memoryColor(value: number): string {
-  if (value > 85) return "var(--danger)";
+  if (value >= 85) return "var(--danger)";
   if (value > 70) return "var(--warning)";
   return "var(--success)";
 }
@@ -235,7 +235,7 @@ function hostRiskHint(host: Host): string {
 }
 
 function isHostUp(status: string): boolean {
-  return status === "up" || status === "healthy";
+  return status === "up";
 }
 
 function matchesHostQuery(host: Host, query: string): boolean {

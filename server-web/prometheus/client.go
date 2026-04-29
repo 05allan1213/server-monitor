@@ -77,6 +77,11 @@ func (c *Client) Ready(ctx context.Context) error {
 }
 
 func (c *Client) GetHosts(ctx context.Context) ([]Host, error) {
+	upValues, err := c.queryInstantVector(ctx, queryHostUp)
+	if err != nil {
+		return nil, err
+	}
+
 	cpuValues, err := c.queryInstantVector(ctx, queryCPUUsage)
 	if err != nil {
 		return nil, err
@@ -89,17 +94,26 @@ func (c *Client) GetHosts(ctx context.Context) ([]Host, error) {
 
 	hostsByInstance := map[string]*Host{}
 
+	for _, item := range upValues {
+		host := getOrCreateHost(hostsByInstance, item.Instance)
+		host.Status = "down"
+		if item.Value >= 1 {
+			host.Status = "up"
+		}
+		host.LastScrape = item.Timestamp.UTC().Format(time.RFC3339)
+	}
+
 	for _, item := range cpuValues {
 		host := getOrCreateHost(hostsByInstance, item.Instance)
 		host.CPU = item.Value
-		host.Status = "healthy"
+		host.Status = "up"
 		host.LastScrape = item.Timestamp.UTC().Format(time.RFC3339)
 	}
 
 	for _, item := range memoryValues {
 		host := getOrCreateHost(hostsByInstance, item.Instance)
 		host.Memory = item.Value
-		host.Status = "healthy"
+		host.Status = "up"
 		if host.LastScrape == "" || item.Timestamp.After(parseTime(host.LastScrape)) {
 			host.LastScrape = item.Timestamp.UTC().Format(time.RFC3339)
 		}

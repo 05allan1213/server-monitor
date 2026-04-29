@@ -481,7 +481,7 @@ func filterHostsByStatus(hosts []promclient.Host, statusFilter string) []promcli
 
 	filtered := make([]promclient.Host, 0, len(hosts))
 	for _, host := range hosts {
-		isUp := host.Status == "up" || host.Status == "healthy"
+		isUp := host.Status == "up"
 		if statusFilter == "up" && isUp {
 			filtered = append(filtered, host)
 			continue
