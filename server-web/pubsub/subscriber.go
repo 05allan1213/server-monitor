@@ -3,7 +3,7 @@ package pubsub
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	rediscache "server-web/redis"
@@ -41,7 +41,7 @@ func (s *Subscriber) Run(ctx context.Context) {
 			return
 		}
 
-		log.Printf("subscribe to %s failed: %v, reconnecting in %v", s.channel, err, delay)
+		slog.Warn("subscribe failed, reconnecting", "channel", s.channel, "error", err, "delay", delay)
 
 		select {
 		case <-ctx.Done():

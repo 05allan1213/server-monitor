@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,6 +34,10 @@ func main() {
 	go websocketHub.Run(ctx)
 
 	if redisClient.Enabled() {
+		if err := redisClient.Ping(context.Background()); err != nil {
+			slog.Error("redis ping failed at startup", "addr", cfg.RedisAddr, "error", err)
+		}
+
 		subscriber := pubsub.NewSubscriber(redisClient, alertHub, rediscache.AlertChannel)
 		go subscriber.Run(ctx)
 	}
@@ -46,7 +50,8 @@ func main() {
 
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub)
 	if err != nil {
-		log.Fatalf("create router failed: %v", err)
+		slog.Error("create router failed", "error", err)
+		os.Exit(1)
 	}
 
 	srv := &http.Server{
@@ -55,9 +60,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("server-web listening on %s", cfg.ListenAddr)
+		slog.Info("server-web listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server-web exited: %v", err)
+			slog.Error("server-web exited", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -65,15 +71,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Printf("server-web shutting down...")
+	slog.Info("server-web shutting down...")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("server-web shutdown error: %v", err)
+		slog.Error("server-web shutdown error", "error", err)
 	}
 
-	log.Printf("server-web stopped")
+	slog.Info("server-web stopped")
 }

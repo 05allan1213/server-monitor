@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -63,9 +63,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("server-probe listening on %s%s", cfg.ListenAddr, cfg.MetricsPath)
+		slog.Info("server-probe listening", "addr", cfg.ListenAddr, "metrics_path", cfg.MetricsPath)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server-probe exited: %v", err)
+			slog.Error("server-probe exited", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -73,23 +74,23 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Printf("server-probe shutting down...")
+	slog.Info("server-probe shutting down...")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("server-probe shutdown error: %v", err)
+		slog.Error("server-probe shutdown error", "error", err)
 	}
 
-	log.Printf("server-probe stopped")
+	slog.Info("server-probe stopped")
 }
 
 func updateCollectors(collectors []collector.Collector) {
 	for _, c := range collectors {
 		if err := c.Update(); err != nil {
-			log.Printf("collector %s update failed: %v", c.Name(), err)
+			slog.Error("collector update failed", "collector", c.Name(), "error", err)
 		}
 	}
 }

@@ -2,7 +2,7 @@ package websocket
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -60,7 +60,7 @@ func (h *Hub) Run(ctx context.Context) {
 				select {
 				case client.send <- message:
 				default:
-					log.Printf("websocket hub: client send buffer full, disconnecting")
+					slog.Warn("websocket hub: client send buffer full, disconnecting")
 					delete(h.clients, client)
 					close(client.send)
 				}
@@ -77,7 +77,7 @@ func (h *Hub) Broadcast(message []byte) {
 	select {
 	case h.broadcast <- message:
 	default:
-		log.Printf("websocket hub: broadcast channel full, message dropped")
+		slog.Warn("websocket hub: broadcast channel full, message dropped")
 	}
 }
 

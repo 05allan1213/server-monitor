@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -223,7 +223,7 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	for _, value := range values {
 		var alert webhook.AlertRecord
 		if err := json.Unmarshal([]byte(value), &alert); err != nil {
-			log.Printf("skip corrupted alert data: %v", err)
+			slog.Warn("skip corrupted alert data", "error", err)
 			continue
 		}
 		alerts = append(alerts, alert)
@@ -249,7 +249,7 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	}
 
 	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
-		log.Printf("websocket upgrade failed: %v", err)
+		slog.Warn("websocket upgrade failed", "error", err)
 	}
 }
 
@@ -278,11 +278,11 @@ func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
 
 	value, err := json.Marshal(hosts)
 	if err != nil {
-		log.Printf("cache hosts marshal failed: %v", err)
+		slog.Error("cache hosts marshal failed", "error", err)
 		return
 	}
 
 	if err := h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL); err != nil {
-		log.Printf("cache hosts set failed: %v", err)
+		slog.Error("cache hosts set failed", "error", err)
 	}
 }

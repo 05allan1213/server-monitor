@@ -2,8 +2,9 @@ package rediscache
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -30,19 +31,15 @@ func NewClient(addr, password string, db int) *Client {
 }
 
 func (c *Client) Enabled() bool {
-	return c != nil && c.enabled && c.client != nil
+	return c != nil && c.enabled
 }
 
 func (c *Client) Ping(ctx context.Context) error {
 	if !c.Enabled() {
-		return nil
+		return errors.New("redis is not enabled")
 	}
 
-	if err := c.client.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("redis ping failed: %w", err)
-	}
-
-	return nil
+	return c.client.Ping(ctx).Err()
 }
 
 func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {
@@ -53,7 +50,7 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {
 	value, err := c.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if err != redis.Nil {
-			log.Printf("redis get %s failed: %v", key, err)
+			slog.Error("redis get failed", "key", key, "error", err)
 		}
 		return nil, false
 	}
@@ -63,7 +60,7 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {
 
 func (c *Client) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	if !c.Enabled() {
-		return nil
+		return errors.New("redis is not enabled")
 	}
 
 	return c.client.Set(ctx, key, value, ttl).Err()
@@ -71,53 +68,50 @@ func (c *Client) Set(ctx context.Context, key string, value []byte, ttl time.Dur
 
 func (c *Client) HSet(ctx context.Context, key, field string, value []byte) error {
 	if !c.Enabled() {
-		return nil
+		return errors.New("redis is not enabled")
 	}
 
 	return c.client.HSet(ctx, key, field, value).Err()
 }
 
-func (c *Client) HDel(ctx context.Context, key string, fields ...string) error {
+func (c *Client) HDel(ctx context.Context, key, field string) error {
 	if !c.Enabled() {
-		return nil
+		return errors.New("redis is not enabled")
 	}
 
-	return c.client.HDel(ctx, key, fields...).Err()
+	return c.client.HDel(ctx, key, field).Err()
 }
 
 func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, error) {
 	if !c.Enabled() {
-		return map[string]string{}, nil
+		return nil, errors.New("redis is not enabled")
 	}
 
-	result, err := c.client.HGetAll(ctx, key).Result()
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return c.client.HGetAll(ctx, key).Result()
 }
 
-func (c *Client) Publish(ctx context.Context, channel string, payload []byte) error {
+func (c *Client) Publish(ctx context.Context, channel string, message []byte) error {
 	if !c.Enabled() {
-		return nil
+		return errors.New("redis is not enabled")
 	}
 
-	return c.client.Publish(ctx, channel, payload).Err()
+	return c.client.Publish(ctx, channel, message).Err()
 }
 
 func (c *Client) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
 	if !c.Enabled() {
-		return nil, nil
+		return nil, errors.New("redis is not enabled")
 	}
 
 	pubsub := c.client.Subscribe(ctx, channel)
-	if _, err := pubsub.Receive(ctx); err != nil {
-		return nil, err
+
+	if err := pubsub.Ping(ctx); err != nil {
+		pubsub.Close()
+		return nil, fmt.Errorf("subscribe ping failed: %w", err)
 	}
 
 	source := pubsub.Channel()
-	output := make(chan string)
+	output := make(chan string, 32)
 
 	go func() {
 		defer close(output)

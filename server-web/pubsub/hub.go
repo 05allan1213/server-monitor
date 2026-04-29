@@ -1,7 +1,7 @@
 package pubsub
 
 import (
-	"log"
+	"log/slog"
 )
 
 type Hub struct {
@@ -22,6 +22,6 @@ func (h *Hub) PublishLocal(message []byte) {
 	select {
 	case h.messages <- message:
 	default:
-		log.Printf("pubsub hub: message channel full, alert dropped")
+		slog.Warn("pubsub hub: message channel full, alert dropped")
 	}
 }

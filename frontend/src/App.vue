@@ -11,7 +11,7 @@ const refreshing = ref(false);
 const errorMessage = ref("");
 const lastUpdatedAt = ref("");
 const latestEvent = ref("");
-const selectedSeverity = ref<"all" | "critical" | "warning">("all");
+const selectedSeverity = ref<"all" | "critical" | "warning" | "info">("all");
 
 const criticalCount = computed(
   () => alerts.value.filter((alert) => alert.labels.severity === "critical").length,
@@ -104,7 +104,7 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
-function setSeverityFilter(value: "all" | "critical" | "warning") {
+function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
   selectedSeverity.value = value;
 }
 
@@ -193,6 +193,14 @@ onMounted(() => {
               @click="setSeverityFilter('warning')"
             >
               Warning
+            </button>
+            <button
+              type="button"
+              class="filter-pill"
+              :class="{ 'filter-pill-active': selectedSeverity === 'info' }"
+              @click="setSeverityFilter('info')"
+            >
+              Info
             </button>
           </div>
 

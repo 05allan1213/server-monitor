@@ -1,24 +1,27 @@
 package collector
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/cpu"
 )
 
 type CPUCollector struct {
-	hostname string
 	usage    *prometheus.GaugeVec
+	hostname string
 }
 
 func NewCPUCollector(hostname string) *CPUCollector {
 	return &CPUCollector{
+		usage: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "server_monitor_cpu_usage_percent",
+				Help: "CPU usage percentage",
+			},
+			[]string{"instance"},
+		),
 		hostname: hostname,
-		usage: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "server_monitor_cpu_usage_percent",
-			Help: "Current CPU usage percentage.",
-		}, []string{"instance"}),
 	}
 }
 
@@ -26,8 +29,8 @@ func (c *CPUCollector) Name() string {
 	return "cpu"
 }
 
-func (c *CPUCollector) Register(registry *prometheus.Registry) {
-	registry.MustRegister(c.usage)
+func (c *CPUCollector) Register(reg *prometheus.Registry) {
+	reg.MustRegister(c.usage)
 }
 
 func (c *CPUCollector) Update() error {
@@ -36,7 +39,7 @@ func (c *CPUCollector) Update() error {
 		return err
 	}
 	if len(percentages) == 0 {
-		log.Printf("collector cpu: cpu.Percent returned empty slice")
+		slog.Warn("collector cpu: cpu.Percent returned empty slice")
 		return nil
 	}
 
