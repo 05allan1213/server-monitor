@@ -119,6 +119,44 @@ make dev-frontend
 - Prometheus：<http://localhost:9091>
 - AlertManager：<http://localhost:9093>
 
+## Kubernetes 部署说明
+
+当前 `k8s/` 目录中的第一阶段清单已经和现有运行模型基本对齐：
+
+- `server-web` 和 `server-probe` 都保留为 `Deployment`
+- 非敏感运行配置统一收口到 `monitor-config`
+- `server-web` 通过同一个 Service 同时承载：
+  - 前端页面 `/`
+  - API `/api/v1/*`
+  - WebSocket `/ws/alerts`
+- Ingress 当前按原路径透传，不再做 `/ -> /` 重写
+
+### 当前配置入口
+
+`k8s/configmap.yaml` 中的 `monitor-config` 当前承载：
+
+- `server-web` 非敏感配置：
+  - `PROMETHEUS_URL`
+  - `REDIS_ADDR`
+  - `GIN_MODE`
+  - `READY_TIMEOUT_SECONDS`
+  - `REQUEST_TIMEOUT_SECONDS`
+  - `HOSTS_CACHE_TTL_SECONDS`
+- `server-probe` 非敏感配置：
+  - `PROBE_LISTEN_ADDR`
+  - `PROBE_METRICS_PATH`
+  - `PROBE_SCRAPE_INTERVAL`
+
+### Ingress 路径模型
+
+当前 [k8s/ingress.yaml](k8s/ingress.yaml) 的设计是把请求原样交给 `server-web`：
+
+- `/` -> 前端页面
+- `/api/v1/*` -> 后端 API
+- `/ws/alerts` -> WebSocket
+
+这意味着如果要使用 Ingress，需要确保 Ingress Controller 不额外改写这些路径。
+
 ## Makefile 命令
 
 ```bash
