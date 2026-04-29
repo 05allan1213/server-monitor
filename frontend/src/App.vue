@@ -66,6 +66,9 @@ const hostCountLabel = computed(() => {
       return "当前主机";
   }
 });
+const highCPUHostCount = computed(() => hosts.value.filter((host) => isHighCPU(host)).length);
+const highMemoryHostCount = computed(() => hosts.value.filter((host) => isHighMemory(host)).length);
+const bothRiskHostCount = computed(() => hosts.value.filter((host) => hostRiskVariant(host) === "both").length);
 const hostFilterSummary = computed(() => {
   const parts: string[] = [];
 
@@ -100,6 +103,15 @@ const hostFilterSummary = computed(() => {
   return parts;
 });
 const hasActiveHostFilters = computed(() => hostFilterSummary.value.length > 0);
+const hostViewSummary = computed(() => {
+  if (loading.value) {
+    return "主机视图加载中";
+  }
+
+  return hasActiveHostFilters.value
+    ? `当前视图匹配 ${hosts.value.length} 台主机`
+    : `当前展示 ${hosts.value.length} 台主机`;
+});
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -627,6 +639,75 @@ onBeforeUnmount(() => {
       <div class="stat-card">
         <div
           class="stat-icon"
+          style="background: var(--warning-soft); color: var(--warning)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M12 3v10" />
+            <path d="M8 13h8" />
+            <path d="M5.6 19h12.8" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--warning)">{{ highCPUHostCount }}</span>
+          <span class="stat-label">高 CPU</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--info-soft); color: var(--info)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="4" y="7" width="16" height="10" rx="2" />
+            <path d="M8 11h8" />
+            <path d="M8 14h5" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--info)">{{ highMemoryHostCount }}</span>
+          <span class="stat-label">高内存</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
+          style="background: var(--danger-soft); color: var(--danger)"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M6 6l12 12" />
+            <path d="M18 6L6 18" />
+            <circle cx="12" cy="12" r="9" />
+          </svg>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value" style="color: var(--danger)">{{ bothRiskHostCount }}</span>
+          <span class="stat-label">双高风险</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div
+          class="stat-icon"
           style="background: var(--info-soft); color: var(--info)"
         >
           <svg
@@ -863,8 +944,17 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="hasActiveHostFilters" class="host-summary">
+      <div class="host-summary">
         <span class="host-summary-label">当前条件</span>
+        <span class="host-summary-chip host-summary-chip-strong">
+          {{ hostViewSummary }}
+        </span>
+        <span
+          v-if="!hasActiveHostFilters"
+          class="host-summary-chip"
+        >
+          默认视图
+        </span>
         <span
           v-for="item in hostFilterSummary"
           :key="item"
@@ -1579,7 +1669,7 @@ onBeforeUnmount(() => {
 /* Stats Row */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -1728,6 +1818,12 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+.host-summary-chip-strong {
+  background: var(--accent-soft);
+  border-color: rgba(59, 130, 246, 0.2);
+  color: var(--accent);
 }
 
 .search-form {
