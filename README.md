@@ -2,30 +2,43 @@
 
 ## 项目简介
 
-这是一个轻量级的服务器监控系统，实现了「探针采集 → 数据存储 → Web 展示」的完整链路，同时集成了 Prometheus + Grafana 可观测性体系。
+轻量级云原生服务器监控系统，实现「探针采集 → Prometheus 存储 → 告警推送 → Web 展示」的完整闭环。
 
-**适合学习的知识点：**
+**核心链路：**
 
-- Go 语言 Web 开发（Gin + GORM）
-- 系统指标采集（gopsutil）
-- Prometheus 指标暴露
-- Docker 多阶段构建
-- Docker Compose 编排
-- Kubernetes 部署
-- GitHub Actions CI/CD
+```
+server-probe → Prometheus → AlertManager → server-web webhook → Redis → WebSocket → 前端
+```
+
+**技术要点：**
+
+- Go 后端（Gin + Prometheus client + gopsutil）
+- Prometheus + Grafana 可观测性体系
+- Redis 缓存 + Pub/Sub 广播
+- AlertManager 告警管理
+- WebSocket 实时推送
+- Vue3 + TypeScript 前端
+- Docker / Kubernetes 部署
 
 ## 架构
 
 ```
-┌─────────────┐       ┌───────────┐       ┌─────────────┐
-│ server-probe │──────▶│   MySQL   │◀──────│  server-web  │
-│  (探针 Agent) │       │ (数据存储)  │       │  (Web 展示)   │
-└──────┬───────┘       └───────────┘       └──────────────┘
-       │ :9090/metrics
-       ▼
-┌─────────────┐       ┌───────────┐
-│  Prometheus  │──────▶│  Grafana   │
-└─────────────┘       └───────────┘
+┌─────────────┐  :9090/metrics  ┌─────────────┐  alert  ┌──────────────┐
+│ server-probe │───────────────▶│  Prometheus  │───────▶│ AlertManager │
+│  (采集探针)   │                │  (指标存储)   │        │  (告警管理)    │
+└─────────────┘                 └──────┬───────┘        └──────┬───────┘
+                                       │ query                  │ webhook
+                                       ▼                        ▼
+                                ┌──────────────────────────────────┐
+                                │           server-web             │
+                                │  (API + WebSocket + 静态文件托管)  │
+                                │                                  │
+                                │  ┌─────────┐  ┌───────────────┐  │
+                                │  │  Redis  │  │  Frontend     │  │
+                                │  │ (缓存)   │  │  (告警面板)    │  │
+                                │  └─────────┘  └───────────────┘  │
+                                └──────────────────────────────────┘
+                                       :8080
 ```
 
 ## 快速开始
@@ -41,23 +54,14 @@ make docker-up
 ### 本地运行
 
 ```bash
-# 1. 创建数据库
-mysql -u root -p
-```
+# 1. 启动依赖（Redis + Prometheus + AlertManager）
+docker-compose up -d redis prometheus alertmanager
 
-```sql
-CREATE DATABASE monitor_db;
-CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor123';
-GRANT ALL PRIVILEGES ON monitor_db.* TO 'monitor'@'%';
-FLUSH PRIVILEGES;
-```
-
-```bash
 # 2. 启动探针
 make run-probe
 
 # 3. 启动 Web（新终端）
-make run-web
+PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 make run-web
 ```
 
 ## Makefile 命令
@@ -79,14 +83,28 @@ make help
 
 ```
 server-monitor/
-├── server-probe/          # 监控探针
-│   ├── main.go            # 采集 CPU/内存，写入 MySQL，暴露 Prometheus 指标
+├── server-probe/          # 监控探针：采集 CPU/内存指标，暴露 /metrics
+│   ├── collector/         # 采集器（CPU、Memory）
+│   ├── config/            # 配置加载
 │   ├── Dockerfile
 │   └── go.mod
-├── server-web/            # Web 展示服务
-│   ├── main.go            # Gin 框架，读取 MySQL，HTML 表格展示
+├── server-web/            # Web 后端：Prometheus 查询 + 告警推送 + 静态文件
+│   ├── api/               # HTTP 路由和 handler
+│   ├── config/            # 配置加载
+│   ├── prometheus/        # Prometheus 客户端
+│   ├── redis/             # Redis 缓存和 Pub/Sub
+│   ├── pubsub/            # 告警广播 Hub
+│   ├── webhook/           # AlertManager webhook 处理
+│   ├── websocket/         # WebSocket Hub
 │   ├── Dockerfile
 │   └── go.mod
+├── frontend/              # Vue3 前端：告警面板
+│   ├── src/
+│   ├── Dockerfile (通过 server-web Dockerfile 构建)
+│   └── package.json
+├── docker/                # Docker Compose 专用配置
+│   ├── prometheus.yml
+│   └── alertmanager.yml
 ├── k8s/                   # Kubernetes 部署清单
 ├── docker-compose.yml     # Docker Compose 编排
 ├── Makefile               # 常用命令
@@ -95,28 +113,50 @@ server-monitor/
 
 ## 接口
 
-| 服务           | 端口   | 路径         | 说明            |
-| ------------ | ---- | ---------- | ------------- |
-| server-web   | 8080 | `/`        | 监控面板（每 2 秒刷新） |
-| server-probe | 9090 | `/metrics` | Prometheus 指标 |
+| 服务           | 端口   | 路径                                | 说明                |
+| ------------ | ---- | --------------------------------- | ----------------- |
+| server-web   | 8080 | `/`                               | 监控面板（前端）          |
+| server-web   | 8080 | `/api/v1/hosts`                   | 主机列表              |
+| server-web   | 8080 | `/api/v1/alerts/active`           | 活跃告警              |
+| server-web   | 8080 | `/ws/alerts`                      | 告警 WebSocket 推送   |
+| server-web   | 8080 | `/api/v1/webhook/alertmanager`    | AlertManager 回调   |
+| server-web   | 8080 | `/healthz` / `/readyz`            | 健康检查              |
+| server-probe | 9090 | `/metrics`                        | Prometheus 指标     |
 
 ## 环境变量
 
-| 变量            | 默认值          | 说明       |
-| ------------- | ------------ | -------- |
-| `DB_HOST`     | `127.0.0.1`  | MySQL 地址 |
-| `DB_PORT`     | `3306`       | MySQL 端口 |
-| `DB_USER`     | `monody`        | 用户名      |
-| `DB_PASSWORD` | `12345678`   | 密码       |
-| `DB_NAME`     | `monitor_db` | 数据库名     |
+### server-probe
+
+| 变量                | 默认值      | 说明        |
+| ----------------- | -------- | --------- |
+| `LISTEN_ADDR`     | `:9090`  | 监听地址      |
+| `SCRAPE_INTERVAL` | `5`      | 采集间隔（秒）   |
+| `METRICS_PATH`    | `/metrics` | 指标路径      |
+
+### server-web
+
+| 变量                        | 默认值                      | 说明          |
+| ------------------------- | ------------------------ | ----------- |
+| `LISTEN_ADDR`             | `:8080`                  | 监听地址        |
+| `PROMETHEUS_URL`          | `http://prometheus:9090` | Prometheus 地址 |
+| `REDIS_ADDR`              | (空)                      | Redis 地址    |
+| `REDIS_PASSWORD`          | (空)                      | Redis 密码    |
+| `REDIS_DB`                | `0`                      | Redis 数据库   |
+| `REQUEST_TIMEOUT_SECONDS` | `5`                      | 请求超时（秒）    |
+| `READY_TIMEOUT_SECONDS`   | `3`                      | 就绪检查超时（秒）  |
+| `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |
+| `STATIC_DIR`              | (空)                      | 前端静态文件目录   |
+| `GIN_MODE`                | `debug`                  | Gin 模式      |
 
 ## 技术栈
 
 - Go 1.26
-- Gin + GORM
-- gopsutil（系统指标）
-- Prometheus client\_golang
-- MySQL 8.0
+- Gin（HTTP 框架）
+- gopsutil（系统指标采集）
+- Prometheus client_golang（指标暴露）
+- go-redis（Redis 客户端）
+- gorilla/websocket（WebSocket）
+- Vue 3 + TypeScript + Vite（前端）
+- Redis 7（缓存 + Pub/Sub）
+- Prometheus + AlertManager + Grafana
 - Docker / Kubernetes
-- GitHub Actions
-

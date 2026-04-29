@@ -1,16 +1,14 @@
 # ============================================
 # ConfigMap - 配置中心
 # ============================================
-# 存储非敏感配置信息，如数据库地址、端口等
+# 存储非敏感配置信息
 # 使用方式：在 Pod 中通过 configMapKeyRef 引用
 # ============================================
 
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mysql-config
+  name: monitor-config
 data:
-  DB_HOST: mysql                    # 数据库主机（K8s Service 名称）
-  DB_PORT: "3306"                   # 数据库端口
-  DB_NAME: monitor_db               # 数据库名
-  MYSQL_DATABASE: monitor_db        # MySQL 初始化时创建的数据库
+  PROMETHEUS_URL: http://prometheus:9090
+  REDIS_ADDR: redis:6379
