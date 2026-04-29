@@ -10,6 +10,14 @@
 server-probe → Prometheus → AlertManager → server-web webhook → Redis Pub/Sub → WebSocket → 前端大屏
 ```
 
+**当前第一阶段能力：**
+
+- 主机指标查询与实时广播
+- 活跃告警查询
+- 最近告警事件查询
+- 告警 WebSocket 实时推送
+- Docker Compose 一键启动与联调
+
 **技术要点：**
 
 - Go 后端（Gin + Prometheus client + gopsutil）
@@ -95,6 +103,7 @@ make docker-up
 4. 打开 <http://localhost:9091/targets>，确认 `server-probe` target 为 `UP`。
 5. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
 6. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
+7. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
 
 ### 开发模式
 
@@ -191,6 +200,7 @@ server-monitor/
 | server-web   | 8080 | `/`                               | 监控大屏（前端）          |
 | server-web   | 8080 | `/api/v1/hosts`                   | 主机列表              |
 | server-web   | 8080 | `/api/v1/alerts/active`           | 活跃告警              |
+| server-web   | 8080 | `/api/v1/alerts/events`           | 最近告警事件          |
 | server-web   | 8080 | `/ws/alerts`                      | WebSocket 实时推送    |
 | server-web   | 8080 | `/api/v1/webhook/alertmanager`    | AlertManager 回调   |
 | server-web   | 8080 | `/healthz` / `/readyz`            | 健康检查              |
@@ -239,3 +249,20 @@ server-monitor/
 - Redis 7（缓存 + Pub/Sub）
 - Prometheus + AlertManager
 - Docker / Kubernetes
+
+## 第一阶段状态
+
+当前第一阶段已经完成最小可用闭环：
+
+- `server-probe` 不再依赖 MySQL，改为纯 Prometheus exporter
+- Prometheus、AlertManager、Redis 和 `server-web` 已串联
+- 前端页面可同时展示主机指标、活跃告警和最近事件
+- WebSocket 可实时推送告警变化
+- Docker Compose 模式已完成一轮真实联调验证
+
+当前还没有纳入第一阶段闭环的主要增强项：
+
+- 前端多页面与主机详情
+- 告警事件筛选 / 分页
+- Helm 收口与更系统化的 K8s 部署整理
+- 更完整的限流、观测和连接增强
