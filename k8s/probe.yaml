@@ -28,6 +28,13 @@ spec:
           ports:
             - containerPort: 9090
               name: metrics
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           livenessProbe:
             httpGet:
               path: /metrics
@@ -43,6 +50,21 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
+            - name: LISTEN_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: PROBE_LISTEN_ADDR
+            - name: METRICS_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: PROBE_METRICS_PATH
+            - name: SCRAPE_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: PROBE_SCRAPE_INTERVAL
 
 ---
 # ------------------------------------------
