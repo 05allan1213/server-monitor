@@ -22,6 +22,7 @@ const toasts = ref<{ id: number; message: string; severity: string }[]>(
   [],
 );
 let toastId = 0;
+const toastTimers: number[] = [];
 
 const { connectionState, connect, disconnect } = useAlertsWebSocket(
   applyIncomingAlert,
@@ -138,8 +139,8 @@ async function loadHosts() {
   try {
     const data = await fetchHosts();
     hosts.value = data;
-  } catch {
-    // 静默刷新
+  } catch (err) {
+    console.error("loadHosts failed:", err);
   }
 }
 
@@ -181,16 +182,18 @@ function applyIncomingHosts(newHosts: Host[]) {
 function showToast(message: string, severity: string) {
   const id = ++toastId;
   toasts.value.push({ id, message, severity });
-  window.setTimeout(() => {
+  if (toasts.value.length > 10) {
+    toasts.value.splice(0, toasts.value.length - 10);
+  }
+  const timerId = window.setTimeout(() => {
     toasts.value = toasts.value.filter((t) => t.id !== id);
   }, 4000);
+  toastTimers.push(timerId);
 }
 
 function updateBeijingTime() {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const cst = new Date(utc + 3600000 * 8);
-  beijingTime.value = cst.toLocaleString("zh-CN", {
+  beijingTime.value = new Date().toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -217,15 +220,23 @@ function updateAgoText() {
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
-    isFullscreen.value = true;
   } else {
     document.exitFullscreen().catch(() => {});
-    isFullscreen.value = false;
   }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement;
 }
 
 function onKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    return;
+  }
+  if ((e.target as HTMLElement).isContentEditable) {
+    return;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) {
     return;
   }
   if (e.key === "r" || e.key === "R") {
@@ -245,16 +256,17 @@ onMounted(() => {
   beijingTimer.value = window.setInterval(updateBeijingTime, 1000);
   updateAgoTimer.value = window.setInterval(updateAgoText, 5000);
   window.addEventListener("keydown", onKeydown);
-  document.addEventListener("fullscreenchange", () => {
-    isFullscreen.value = !!document.fullscreenElement;
-  });
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 });
 
 onBeforeUnmount(() => {
   disconnect();
   if (beijingTimer.value !== null) clearInterval(beijingTimer.value);
   if (updateAgoTimer.value !== null) clearInterval(updateAgoTimer.value);
+  toastTimers.forEach((id) => clearTimeout(id));
+  toastTimers.length = 0;
   window.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
 });
 </script>
 

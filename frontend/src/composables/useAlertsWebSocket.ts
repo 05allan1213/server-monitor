@@ -18,13 +18,31 @@ function buildWebSocketUrl() {
 function isValidAlertRecord(data: unknown): data is AlertRecord {
   if (!data || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
-  return typeof record.fingerprint === "string" && typeof record.status === "string";
+  return (
+    typeof record.fingerprint === "string" &&
+    typeof record.status === "string" &&
+    (record.status === "firing" || record.status === "resolved") &&
+    typeof record.labels === "object" && record.labels !== null &&
+    typeof record.annotations === "object" && record.annotations !== null
+  );
+}
+
+function isValidHost(data: unknown): data is Host {
+  if (!data || typeof data !== "object") return false;
+  const h = data as Record<string, unknown>;
+  return (
+    typeof h.instance === "string" &&
+    typeof h.cpu === "number" &&
+    typeof h.memory === "number" &&
+    typeof h.status === "string"
+  );
 }
 
 function isValidHostsMessage(data: unknown): data is { type: "hosts"; data: Host[] } {
   if (!data || typeof data !== "object") return false;
   const msg = data as Record<string, unknown>;
-  return msg.type === "hosts" && Array.isArray(msg.data);
+  if (msg.type !== "hosts" || !Array.isArray(msg.data)) return false;
+  return msg.data.every(isValidHost);
 }
 
 export function useAlertsWebSocket(
