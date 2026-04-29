@@ -93,3 +93,44 @@ func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, er
 
 	return result, nil
 }
+
+func (c *Client) Publish(ctx context.Context, channel string, payload []byte) error {
+	if !c.Enabled() {
+		return nil
+	}
+
+	return c.client.Publish(ctx, channel, payload).Err()
+}
+
+func (c *Client) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+
+	pubsub := c.client.Subscribe(ctx, channel)
+	if _, err := pubsub.Receive(ctx); err != nil {
+		return nil, err
+	}
+
+	source := pubsub.Channel()
+	output := make(chan string)
+
+	go func() {
+		defer close(output)
+		defer pubsub.Close()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case message, ok := <-source:
+				if !ok {
+					return
+				}
+				output <- message.Payload
+			}
+		}
+	}()
+
+	return output, nil
+}

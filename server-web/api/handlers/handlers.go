@@ -154,18 +154,18 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			continue
 		}
 
+		message, err := json.Marshal(alert)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, response{
+				Status: "error",
+				Error:  fmt.Sprintf("marshal alert payload failed: %v", err),
+			})
+			return
+		}
+
 		switch alert.Status {
 		case "firing":
-			value, err := json.Marshal(alert)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, response{
-					Status: "error",
-					Error:  fmt.Sprintf("marshal alert payload failed: %v", err),
-				})
-				return
-			}
-
-			if err := h.cacheClient.HSet(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint, value); err != nil {
+			if err := h.cacheClient.HSet(c.Request.Context(), rediscache.ActiveAlertsKey, alert.Fingerprint, message); err != nil {
 				c.JSON(http.StatusBadGateway, response{
 					Status: "error",
 					Error:  fmt.Sprintf("store active alert failed: %v", err),
@@ -180,6 +180,14 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 				})
 				return
 			}
+		}
+
+		if err := h.cacheClient.Publish(c.Request.Context(), rediscache.AlertChannel, message); err != nil {
+			c.JSON(http.StatusBadGateway, response{
+				Status: "error",
+				Error:  fmt.Sprintf("publish alert event failed: %v", err),
+			})
+			return
 		}
 	}
 

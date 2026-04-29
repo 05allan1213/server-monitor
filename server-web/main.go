@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -8,6 +9,7 @@ import (
 	"server-web/api"
 	"server-web/config"
 	promclient "server-web/prometheus"
+	"server-web/pubsub"
 	rediscache "server-web/redis"
 )
 
@@ -17,6 +19,12 @@ func main() {
 
 	prometheusClient := promclient.NewClient(cfg.PrometheusURL, cfg.RequestTimeout)
 	redisClient := rediscache.NewClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	alertHub := pubsub.NewHub(64)
+
+	if redisClient.Enabled() {
+		subscriber := pubsub.NewSubscriber(redisClient, alertHub, rediscache.AlertChannel)
+		go subscriber.Run(context.Background())
+	}
 
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient)
 	if err != nil {
