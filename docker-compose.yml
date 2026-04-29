@@ -8,61 +8,64 @@
 
 services:
   # ------------------------------------------
-  # MySQL 数据库
+  # Redis 缓存与 Pub/Sub
   # ------------------------------------------
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: root123      # root 用户密码
-      MYSQL_DATABASE: monitor_db        # 自动创建的数据库名
-      MYSQL_USER: monody                   # 普通用户名
-      MYSQL_PASSWORD: 12345678          # 普通用户密码
-    volumes:
-      - mysql_data:/var/lib/mysql       # 数据持久化
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
     healthcheck:
-      # 健康检查：每 5 秒检查一次 MySQL 是否可用
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
-      interval: 5s                      # 检查间隔
-      timeout: 3s                       # 超时时间
-      retries: 10                       # 重试次数
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # ------------------------------------------
   # server-probe 监控探针
   # ------------------------------------------
   server-probe:
-    build: ./server-probe               # 使用本地 Dockerfile 构建
+    build: ./server-probe
+    ports:
+      - "9090:9090"
     environment:
-      DB_HOST: mysql                    # 数据库主机（Docker 网络内使用服务名）
-      DB_PORT: "3306"                   # 数据库端口
-      DB_USER: monody                      # 数据库用户名
-      DB_PASSWORD: 12345678             # 数据库密码
-      DB_NAME: monitor_db               # 数据库名
-    depends_on:
-      mysql:
-        condition: service_healthy      # 等待 MySQL 健康检查通过后再启动
-    # 如需暴露 Prometheus 指标端口，取消下面注释
-    # ports:
-    #   - "9090:9090"
+      LISTEN_ADDR: ":9090"
+
+  # ------------------------------------------
+  # Prometheus 监控服务
+  # ------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=1h"
+
+  # ------------------------------------------
+  # AlertManager 告警管理
+  # ------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
 
   # ------------------------------------------
   # server-web Web 展示服务
   # ------------------------------------------
   server-web:
-    build: ./server-web                 # 使用本地 Dockerfile 构建
+    build: ./server-web
     ports:
-      - "8080:8080"                     # 映射端口：主机:容器
+      - "8080:8080"
     environment:
-      DB_HOST: mysql                    # 数据库主机
-      DB_PORT: "3306"                   # 数据库端口
-      DB_USER: monody                      # 数据库用户名
-      DB_PASSWORD: 12345678             # 数据库密码
-      DB_NAME: monitor_db               # 数据库名
+      PROMETHEUS_URL: http://prometheus:9090
+      REDIS_ADDR: redis:6379
+      GIN_MODE: release
     depends_on:
-      mysql:
-        condition: service_healthy      # 等待 MySQL 健康检查通过后再启动
-
-# ============================================
-# 数据卷定义
-# ============================================
-volumes:
-  mysql_data:                           # MySQL 数据持久化卷
+      redis:
+        condition: service_healthy
