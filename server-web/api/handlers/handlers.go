@@ -42,15 +42,6 @@ func NewHandler(promClient *promclient.Client, cacheClient *rediscache.Client, r
 	}
 }
 
-func (h *Handler) Root(c *gin.Context) {
-	c.JSON(http.StatusOK, response{
-		Status: "success",
-		Data: gin.H{
-			"message": "server-web is running",
-		},
-	})
-}
-
 func (h *Handler) Healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, response{
 		Status: "success",

@@ -23,16 +23,14 @@ RUN CGO_ENABLED=0 go build -o probe .
 # 第二阶段：运行（Runtime Stage）
 # ============================================
 # 使用 Alpine 最小化镜像，减小镜像体积
-FROM alpine:latest
+FROM alpine:3.19
 
-# 安装时区数据（支持时区设置）
 RUN apk add --no-cache tzdata
 
-# 设置工作目录
 WORKDIR /app
 
-# 从编译阶段复制二进制文件
 COPY --from=builder /app/probe .
 
-# 容器启动命令
+EXPOSE 9090
+
 CMD ["/app/probe"]

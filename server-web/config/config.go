@@ -18,6 +18,7 @@ type Config struct {
 	RedisAddr      string
 	RedisPassword  string
 	RedisDB        int
+	StaticDir      string
 }
 
 func Load() Config {
@@ -32,6 +33,7 @@ func Load() Config {
 		RedisAddr:      getEnv("REDIS_ADDR", ""),
 		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
 		RedisDB:        getEnvInt("REDIS_DB", 0),
+		StaticDir:      getEnv("STATIC_DIR", ""),
 	}
 }
 
