@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -250,10 +251,7 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	}
 
 	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
-		c.JSON(http.StatusBadRequest, response{
-			Status: "error",
-			Error:  fmt.Sprintf("websocket upgrade failed: %v", err),
-		})
+		log.Printf("websocket upgrade failed: %v", err)
 	}
 }
 
