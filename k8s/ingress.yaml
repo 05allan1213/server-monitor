@@ -9,9 +9,6 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: monitor-ingress
-  annotations:
-    # 重写目标路径
-    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx          # Ingress Controller 类型
   rules:
@@ -32,4 +29,7 @@ spec:
 # 1. 安装 nginx-ingress-controller
 # 2. 配置本地 hosts: <节点IP> monitor.local
 # 3. 访问 http://monitor.local
+#    - 前端页面: /
+#    - API: /api/v1/*
+#    - WebSocket: /ws/alerts
 # ============================================
