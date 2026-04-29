@@ -1,7 +1,7 @@
 package collector
 
 import (
-	"time"
+	"log"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -31,11 +31,12 @@ func (c *CPUCollector) Register(registry *prometheus.Registry) {
 }
 
 func (c *CPUCollector) Update() error {
-	percentages, err := cpu.Percent(time.Second, false)
+	percentages, err := cpu.Percent(0, false)
 	if err != nil {
 		return err
 	}
 	if len(percentages) == 0 {
+		log.Printf("collector cpu: cpu.Percent returned empty slice")
 		return nil
 	}
 
