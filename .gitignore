@@ -47,6 +47,9 @@ Thumbs.db
 main
 probe
 web
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 
 # AI file
 .codex
