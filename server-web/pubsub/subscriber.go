@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"time"
 
 	rediscache "server-web/redis"
@@ -41,12 +42,13 @@ func (s *Subscriber) Run(ctx context.Context) {
 			return
 		}
 
-		slog.Warn("subscribe failed, reconnecting", "channel", s.channel, "error", err, "delay", delay)
+		waitDelay := withJitter(delay)
+		slog.Warn("subscribe failed, reconnecting", "channel", s.channel, "error", err, "delay", waitDelay)
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(delay):
+		case <-time.After(waitDelay):
 		}
 
 		delay *= 2
@@ -70,7 +72,26 @@ func (s *Subscriber) subscribeOnce(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("subscription channel closed")
 			}
-			s.hub.PublishLocal([]byte(message))
+			if err := s.hub.PublishLocal(ctx, []byte(message)); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("publish local alert: %w", err)
+			}
 		}
 	}
+}
+
+func withJitter(delay time.Duration) time.Duration {
+	if delay <= 0 {
+		return delay
+	}
+
+	jitter := delay / 5
+	if jitter <= 0 {
+		return delay
+	}
+
+	offset := time.Duration(rand.Int64N(int64(jitter)*2+1)) - jitter
+	return delay + offset
 }

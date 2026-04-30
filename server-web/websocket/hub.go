@@ -2,7 +2,7 @@ package websocket
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -20,6 +20,11 @@ const (
 	maxMessageSize = 1024
 )
 
+var (
+	ErrHubClosed       = errors.New("websocket hub is shutting down")
+	ErrRegisterChannel = errors.New("websocket register channel is full")
+)
+
 type Hub struct {
 	clients    map[*Client]bool
 	register   chan *Client
@@ -27,6 +32,7 @@ type Hub struct {
 	broadcast  chan []byte
 	done       chan struct{}
 	once       sync.Once
+	observerMu sync.RWMutex
 	observer   func(int)
 	upgrader   websocket.Upgrader
 }
@@ -56,9 +62,6 @@ func (h *Hub) Run(ctx context.Context) {
 		h.once.Do(func() { close(h.done) })
 		for client := range h.clients {
 			close(client.send)
-			if client.conn != nil {
-				client.conn.Close()
-			}
 			delete(h.clients, client)
 		}
 		h.observeConnections()
@@ -103,12 +106,18 @@ func (h *Hub) broadcastMessage(message []byte) {
 }
 
 func (h *Hub) SetConnectionObserver(observer func(int)) {
+	h.observerMu.Lock()
+	defer h.observerMu.Unlock()
 	h.observer = observer
 }
 
 func (h *Hub) observeConnections() {
-	if h.observer != nil {
-		h.observer(len(h.clients))
+	h.observerMu.RLock()
+	observer := h.observer
+	h.observerMu.RUnlock()
+
+	if observer != nil {
+		observer(len(h.clients))
 	}
 }
 
@@ -126,10 +135,28 @@ func (h *Hub) Broadcast(message []byte) {
 	}
 }
 
+func (h *Hub) BroadcastBlocking(ctx context.Context, message []byte) error {
+	if h == nil {
+		return ErrHubClosed
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case <-h.done:
+		return ErrHubClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	case h.broadcast <- message:
+		return nil
+	}
+}
+
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	select {
 	case <-h.done:
-		return fmt.Errorf("websocket hub is shutting down")
+		return ErrHubClosed
 	default:
 	}
 
@@ -147,11 +174,11 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	select {
 	case <-h.done:
 		conn.Close()
-		return fmt.Errorf("websocket hub is shutting down")
+		return ErrHubClosed
 	case h.register <- client:
 	default:
 		conn.Close()
-		return nil
+		return ErrRegisterChannel
 	}
 
 	go client.writePump()

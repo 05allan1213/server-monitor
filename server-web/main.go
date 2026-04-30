@@ -69,7 +69,12 @@ func main() {
 	go func() {
 		defer close(alertHubConsumers)
 		for message := range alertHub.Messages() {
-			websocketHub.Broadcast(message)
+			if err := websocketHub.BroadcastBlocking(ctx, message); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				slog.Warn("broadcast alert failed", "error", err)
+			}
 		}
 	}()
 

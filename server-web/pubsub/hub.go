@@ -1,9 +1,12 @@
 package pubsub
 
 import (
-	"log/slog"
+	"context"
+	"errors"
 	"sync"
 )
+
+var ErrHubClosed = errors.New("pubsub hub is closed")
 
 type Hub struct {
 	messages chan []byte
@@ -21,16 +24,25 @@ func (h *Hub) Messages() <-chan []byte {
 	return h.messages
 }
 
-func (h *Hub) PublishLocal(message []byte) {
+func (h *Hub) PublishLocal(ctx context.Context, message []byte) error {
+	if h == nil {
+		return ErrHubClosed
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.closed {
-		return
+		return ErrHubClosed
 	}
+
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case h.messages <- message:
-	default:
-		slog.Warn("pubsub hub: message channel full, alert dropped")
+		return nil
 	}
 }
 

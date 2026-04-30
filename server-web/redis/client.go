@@ -5,10 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+)
+
+var (
+	rateLimitMemberPrefix = fmt.Sprintf("%d:%d", os.Getpid(), time.Now().UnixNano())
+	rateLimitMemberSeq    atomic.Uint64
 )
 
 type Client struct {
@@ -165,7 +172,7 @@ func (c *Client) AllowSlidingWindow(ctx context.Context, key string, limit int64
 	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart, 10))
 	pipe.ZAdd(ctx, key, redis.Z{
 		Score:  float64(nowUnixNano),
-		Member: strconv.FormatInt(nowUnixNano, 10),
+		Member: newRateLimitMember(nowUnixNano),
 	})
 	count := pipe.ZCard(ctx, key)
 	pipe.Expire(ctx, key, window)
@@ -181,6 +188,10 @@ func (c *Client) AllowSlidingWindow(ctx context.Context, key string, limit int64
 	}
 
 	return used <= limit, remaining, nil
+}
+
+func newRateLimitMember(nowUnixNano int64) string {
+	return fmt.Sprintf("%s:%d:%d", rateLimitMemberPrefix, nowUnixNano, rateLimitMemberSeq.Add(1))
 }
 
 func (c *Client) XAddMaxLen(ctx context.Context, key string, maxLen int64, value []byte) error {
