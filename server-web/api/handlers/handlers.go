@@ -48,6 +48,7 @@ type response struct {
 }
 
 const defaultAlertEventsLimit int64 = 8
+const dashboardOverviewTTL = 10 * time.Second
 
 type hostMetricsRange struct {
 	duration time.Duration
@@ -65,6 +66,17 @@ type hostMetricsResponse struct {
 	Range       string                              `json:"range"`
 	StepSeconds int64                               `json:"stepSeconds"`
 	Metrics     map[string][]promclient.RangeSeries `json:"metrics"`
+}
+
+type dashboardOverview struct {
+	TotalHosts    int     `json:"total_hosts"`
+	HealthyHosts  int     `json:"healthy_hosts"`
+	DownHosts     int     `json:"down_hosts"`
+	ActiveAlerts  int     `json:"active_alerts"`
+	AvgCPU        float64 `json:"avg_cpu"`
+	AvgMemory     float64 `json:"avg_memory"`
+	GeneratedAt   string  `json:"generated_at"`
+	AlertDegraded bool    `json:"alert_degraded,omitempty"`
 }
 
 var validAlertEventStatuses = map[string]struct{}{
@@ -271,6 +283,43 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 	})
 }
 
+func (h *Handler) DashboardOverview(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
+	defer cancel()
+
+	if cached, ok := h.getCachedDashboardOverview(ctx); ok {
+		c.JSON(http.StatusOK, response{
+			Status: "success",
+			Data:   cached,
+		})
+		return
+	}
+
+	hosts, err := h.promClient.GetHosts(ctx)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	overview := buildDashboardOverview(hosts)
+	activeAlerts, degraded := h.countActiveAlerts(ctx)
+	overview.ActiveAlerts = activeAlerts
+	overview.AlertDegraded = degraded
+	overview.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+
+	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cacheCancel()
+	h.cacheDashboardOverview(cacheCtx, overview)
+
+	c.JSON(http.StatusOK, response{
+		Status: "success",
+		Data:   overview,
+	})
+}
+
 func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	if h.cacheClient == nil || !h.cacheClient.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
@@ -474,6 +523,54 @@ func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
 	}
 }
 
+func (h *Handler) getCachedDashboardOverview(ctx context.Context) (dashboardOverview, bool) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		return dashboardOverview{}, false
+	}
+
+	value, ok := h.cacheClient.Get(ctx, rediscache.DashboardOverviewKey)
+	if !ok {
+		return dashboardOverview{}, false
+	}
+
+	var overview dashboardOverview
+	if err := json.Unmarshal(value, &overview); err != nil {
+		return dashboardOverview{}, false
+	}
+
+	return overview, true
+}
+
+func (h *Handler) cacheDashboardOverview(ctx context.Context, overview dashboardOverview) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		return
+	}
+
+	value, err := json.Marshal(overview)
+	if err != nil {
+		slog.Error("cache dashboard overview marshal failed", "error", err)
+		return
+	}
+
+	if err := h.cacheClient.Set(ctx, rediscache.DashboardOverviewKey, value, dashboardOverviewTTL); err != nil {
+		slog.Error("cache dashboard overview set failed", "error", err)
+	}
+}
+
+func (h *Handler) countActiveAlerts(ctx context.Context) (int, bool) {
+	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+		return 0, false
+	}
+
+	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
+	if err != nil {
+		slog.Warn("dashboard overview active alerts degraded", "error", err)
+		return 0, true
+	}
+
+	return len(values), false
+}
+
 func decodeActiveAlerts(values map[string]string) []webhook.AlertRecord {
 	alerts := make([]webhook.AlertRecord, 0, len(values))
 	for _, value := range values {
@@ -667,6 +764,32 @@ func buildHostMetricQueries(mountpoint string) []hostMetricQuery {
 		{name: "process_count", metric: promclient.MetricProcessCount},
 		{name: "uptime", metric: promclient.MetricUptime},
 	}
+}
+
+func buildDashboardOverview(hosts []promclient.Host) dashboardOverview {
+	overview := dashboardOverview{
+		TotalHosts: len(hosts),
+	}
+	if len(hosts) == 0 {
+		return overview
+	}
+
+	var totalCPU float64
+	var totalMemory float64
+	for _, host := range hosts {
+		if host.Status == "up" {
+			overview.HealthyHosts++
+		} else {
+			overview.DownHosts++
+		}
+		totalCPU += host.CPU
+		totalMemory += host.Memory
+	}
+
+	overview.AvgCPU = totalCPU / float64(len(hosts))
+	overview.AvgMemory = totalMemory / float64(len(hosts))
+
+	return overview
 }
 
 func sortHosts(hosts []promclient.Host, sortBy string) []promclient.Host {
