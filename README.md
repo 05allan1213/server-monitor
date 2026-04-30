@@ -26,6 +26,7 @@ server-probe → Prometheus → AlertManager → server-web webhook → Redis Pu
 - AlertManager 告警管理
 - WebSocket 实时推送（主机指标 + 告警）
 - Vue 3 + TypeScript 暗色监控大屏
+- Grafana Provisioning 自动加载 Prometheus 数据源和基础大盘
 - Docker / Kubernetes 部署
 
 ## 架构
@@ -61,6 +62,7 @@ make docker-up
 
 说明：
 - `server-web` 容器会同时托管前端静态文件
+- Grafana 地址为 <http://localhost:3000>，默认账号为 `admin`，默认密码为 `server-monitor-local-grafana`
 - 首次启动后，Prometheus 抓取和告警规则加载通常需要 `15-30` 秒
 - 如果刚启动就访问 `/readyz`，短时间内返回未就绪是正常现象
 
@@ -101,9 +103,10 @@ make docker-up
 2. 打开 <http://localhost:8080/healthz>，确认返回 `healthy: true`。
 3. 打开 <http://localhost:8080/readyz>，确认 `prometheus` 和 `redis` 最终变为 `ok`。
 4. 打开 <http://localhost:9091/targets>，确认 `server-probe` target 为 `UP`。
-5. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
-6. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
-7. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
+5. 打开 <http://localhost:3000>，使用 `admin` / `server-monitor-local-grafana` 登录，确认 Prometheus 数据源和 `Server Monitor Overview` 大盘已自动加载。
+6. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
+7. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
+8. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
 
 ### 开发模式
 
@@ -118,6 +121,7 @@ make dev-frontend
 - 后端健康检查：<http://localhost:8080/healthz>
 - Prometheus：<http://localhost:9091>
 - AlertManager：<http://localhost:9093>
+- Grafana：<http://localhost:3000>
 
 ## Kubernetes 部署说明
 
@@ -170,7 +174,7 @@ make help
 
 | 命令                 | 说明                                        |
 | ------------------ | ----------------------------------------- |
-| `make dev-deps`    | 启动依赖服务（Redis/Prometheus/AlertManager/Probe） |
+| `make dev-deps`    | 启动依赖服务（Redis/Prometheus/AlertManager/Grafana/Probe） |
 | `make dev-web`     | 本地运行 server-web（需先启动 dev-deps）             |
 | `make dev-frontend`| 本地运行前端开发服务器（需先启动 dev-web）                 |
 | `make dev-stop`    | 停止开发依赖服务                                  |
@@ -248,6 +252,7 @@ server-monitor/
 | server-probe | 9090 | `/metrics`                        | Prometheus 指标     |
 | Prometheus   | 9091 | `/`                               | Prometheus 控制台    |
 | AlertManager | 9093 | `/`                               | AlertManager 控制台  |
+| Grafana      | 3000 | `/`                               | Grafana 大盘        |
 
 ## 环境变量
 

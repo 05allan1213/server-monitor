@@ -33,12 +33,13 @@ run-web:
 # ============================================
 
 dev-deps:
-	@echo "启动依赖服务（Redis、Prometheus、AlertManager、server-probe）..."
-	docker compose up -d redis prometheus alertmanager server-probe
+	@echo "启动依赖服务（Redis、Prometheus、AlertManager、Grafana、server-probe）..."
+	docker compose up -d redis prometheus alertmanager grafana server-probe
 	@echo "依赖服务已启动"
 	@echo "  Redis:        localhost:6379"
 	@echo "  Prometheus:   http://localhost:9091"
 	@echo "  AlertManager: http://localhost:9093"
+	@echo "  Grafana:      http://localhost:3000"
 	@echo "  server-probe: http://localhost:9090"
 	@echo "提示: Prometheus 首次抓取和规则加载通常需要 15-30 秒"
 
@@ -73,6 +74,7 @@ docker-up:
 	@echo "  监控大屏:     http://localhost:8080"
 	@echo "  Prometheus:   http://localhost:9091"
 	@echo "  AlertManager: http://localhost:9093"
+	@echo "  Grafana:      http://localhost:3000"
 	@echo "提示: 首次启动后等待 15-30 秒，再访问 /readyz 或前端页面"
 
 docker-down:
@@ -140,7 +142,7 @@ help:
 	@echo "  make build-web      构建 server-web"
 	@echo ""
 	@echo "开发模式（推荐开发阶段使用，无需构建镜像）:"
-	@echo "  make dev-deps       启动依赖服务（Redis/Prometheus/AlertManager/Probe）"
+	@echo "  make dev-deps       启动依赖服务（Redis/Prometheus/AlertManager/Grafana/Probe）"
 	@echo "  make dev-web        本地运行 server-web（需先启动 dev-deps）"
 	@echo "  make dev-frontend   本地运行前端开发服务器（需先启动 dev-web）"
 	@echo "  make dev-stop       停止开发依赖服务"
