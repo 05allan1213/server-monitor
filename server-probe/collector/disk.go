@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -55,7 +56,11 @@ func (c *DiskCollector) Register(registry *prometheus.Registry) {
 	registry.MustRegister(c.usage, c.total, c.free, c.readBytes, c.writeBytes)
 }
 
-func (c *DiskCollector) Update() error {
+func (c *DiskCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	var errs []error
 
 	partitions, err := disk.Partitions(false)
@@ -63,6 +68,9 @@ func (c *DiskCollector) Update() error {
 		errs = append(errs, err)
 	} else {
 		for _, partition := range partitions {
+			if err := ctx.Err(); err != nil {
+				return errors.Join(append(errs, err)...)
+			}
 			usage, err := disk.Usage(partition.Mountpoint)
 			if err != nil {
 				slog.Warn("disk usage collect failed", "mountpoint", partition.Mountpoint, "error", err)
@@ -75,11 +83,18 @@ func (c *DiskCollector) Update() error {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+
 	ioCounters, err := disk.IOCounters()
 	if err != nil {
 		errs = append(errs, err)
 	} else {
 		for device, stat := range ioCounters {
+			if err := ctx.Err(); err != nil {
+				return errors.Join(append(errs, err)...)
+			}
 			c.addCounterDelta(c.readBytes, c.lastReadBytes, device, stat.ReadBytes)
 			c.addCounterDelta(c.writeBytes, c.lastWriteBytes, device, stat.WriteBytes)
 		}

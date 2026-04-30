@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,7 +34,11 @@ func (c *CPUCollector) Register(reg *prometheus.Registry) {
 	reg.MustRegister(c.usage)
 }
 
-func (c *CPUCollector) Update() error {
+func (c *CPUCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	percentages, err := cpu.Percent(0, false)
 	if err != nil {
 		return err

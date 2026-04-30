@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -41,7 +42,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	updateCollectors(collectors)
+	updateCollectors(ctx, collectors)
 
 	go func() {
 		ticker := time.NewTicker(cfg.ScrapeInterval)
@@ -52,7 +53,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				updateCollectors(collectors)
+				updateCollectors(ctx, collectors)
 			}
 		}
 	}()
@@ -121,9 +122,15 @@ func main() {
 	}
 }
 
-func updateCollectors(collectors []collector.Collector) {
+func updateCollectors(ctx context.Context, collectors []collector.Collector) {
 	for _, c := range collectors {
-		if err := c.Update(); err != nil {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		if err := c.Update(ctx); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
 			slog.Error("collector update failed", "collector", c.Name(), "error", err)
 		}
 	}

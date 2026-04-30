@@ -1,6 +1,8 @@
 package collector
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/load"
 )
@@ -38,7 +40,11 @@ func (c *LoadCollector) Register(registry *prometheus.Registry) {
 	registry.MustRegister(c.load1, c.load5, c.load15)
 }
 
-func (c *LoadCollector) Update() error {
+func (c *LoadCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	avg, err := load.Avg()
 	if err != nil {
 		return err

@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,12 +37,20 @@ func (c *ProcessCollector) Register(registry *prometheus.Registry) {
 	registry.MustRegister(c.processCount, c.uptime)
 }
 
-func (c *ProcessCollector) Update() error {
+func (c *ProcessCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	pids, err := process.Pids()
 	if err != nil {
 		return err
 	}
 	c.processCount.WithLabelValues(c.hostname).Set(float64(len(pids)))
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	bootTime, err := host.BootTime()
 	if err != nil {

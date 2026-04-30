@@ -1,6 +1,8 @@
 package collector
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/mem"
 )
@@ -38,7 +40,11 @@ func (c *MemoryCollector) Register(registry *prometheus.Registry) {
 	registry.MustRegister(c.usage, c.total, c.available)
 }
 
-func (c *MemoryCollector) Update() error {
+func (c *MemoryCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	virtualMemory, err := mem.VirtualMemory()
 	if err != nil {
 		return err

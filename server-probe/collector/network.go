@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,13 +40,20 @@ func (c *NetworkCollector) Register(registry *prometheus.Registry) {
 	registry.MustRegister(c.recvBytes, c.sentBytes)
 }
 
-func (c *NetworkCollector) Update() error {
+func (c *NetworkCollector) Update(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	counters, err := gopsnet.IOCounters(true)
 	if err != nil {
 		return err
 	}
 
 	for _, stat := range counters {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		c.addCounterDelta(c.recvBytes, c.lastRecvBytes, stat.Name, stat.BytesRecv)
 		c.addCounterDelta(c.sentBytes, c.lastSentBytes, stat.Name, stat.BytesSent)
 	}

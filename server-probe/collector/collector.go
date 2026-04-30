@@ -1,9 +1,13 @@
 package collector
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"context"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 type Collector interface {
 	Name() string
 	Register(registry *prometheus.Registry)
-	Update() error
+	Update(ctx context.Context) error
 }
