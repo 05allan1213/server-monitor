@@ -3,6 +3,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 
 import { fetchActiveAlerts, fetchAlertEvents } from "./api/alerts";
 import { fetchHosts } from "./api/hosts";
+import HostResourceChart from "./components/HostResourceChart.vue";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
 import type { AlertEvent, AlertRecord, Host } from "./types";
 
@@ -822,6 +823,31 @@ onBeforeUnmount(() => {
           <span class="stat-label">提示</span>
         </div>
       </div>
+    </section>
+
+    <!-- Host Resource Chart -->
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            style="color: var(--info)"
+          >
+            <path d="M3 3v18h18" />
+            <rect x="7" y="10" width="3" height="7" rx="1" />
+            <rect x="12" y="6" width="3" height="11" rx="1" />
+            <rect x="17" y="13" width="3" height="4" rx="1" />
+          </svg>
+          <h2>资源分布</h2>
+        </div>
+        <span class="panel-badge">ECharts</span>
+      </div>
+      <HostResourceChart :hosts="hosts" />
     </section>
 
     <!-- Hosts Section -->
