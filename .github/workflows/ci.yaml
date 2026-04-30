@@ -20,6 +20,13 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: server-probe/go.sum
 
+      - name: Install goimports
+        run: go install golang.org/x/tools/cmd/goimports@latest
+
+      - name: Goimports
+        working-directory: server-probe
+        run: test -z "$(goimports -l .)"
+
       - name: Test
         working-directory: server-probe
         run: go test ./...
@@ -38,6 +45,13 @@ jobs:
         with:
           go-version: "1.26"
           cache-dependency-path: server-web/go.sum
+
+      - name: Install goimports
+        run: go install golang.org/x/tools/cmd/goimports@latest
+
+      - name: Goimports
+        working-directory: server-web
+        run: test -z "$(goimports -l .)"
 
       - name: Test
         working-directory: server-web
@@ -154,7 +168,9 @@ jobs:
           context: ./server-probe
           file: ./server-probe/Dockerfile
           push: true
-          tags: 05allan1213/server-probe:latest
+          tags: |
+            05allan1213/server-probe:latest
+            05allan1213/server-probe:${{ github.sha }}
 
       - name: Build and push web
         uses: docker/build-push-action@v5
@@ -162,4 +178,6 @@ jobs:
           context: .
           file: ./server-web/Dockerfile
           push: true
-          tags: 05allan1213/server-web:latest
+          tags: |
+            05allan1213/server-web:latest
+            05allan1213/server-web:${{ github.sha }}

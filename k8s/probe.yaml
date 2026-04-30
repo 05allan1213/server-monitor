@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: server-probe
-          image: goproject-server-probe:latest
+          image: goproject-server-probe:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9090

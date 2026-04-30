@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: server-web
-          image: goproject-server-web:latest
+          image: goproject-server-web:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

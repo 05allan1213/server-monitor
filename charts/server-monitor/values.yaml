@@ -34,7 +34,7 @@ serverWeb:
   replicas: 1
   image:
     repository: goproject-server-web
-    tag: latest
+    tag: 0.1.0
   service:
     type: NodePort
     port: 8080
@@ -51,7 +51,7 @@ serverProbe:
   enabled: true
   image:
     repository: goproject-server-probe
-    tag: latest
+    tag: 0.1.0
   listenAddr: ":9090"
   metricsPath: /metrics
   scrapeInterval: "5"
