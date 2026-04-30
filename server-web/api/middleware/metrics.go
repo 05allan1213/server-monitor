@@ -11,9 +11,10 @@ import (
 )
 
 type Metrics struct {
-	registry        *prometheus.Registry
-	requestsTotal   *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+	registry             *prometheus.Registry
+	requestsTotal        *prometheus.CounterVec
+	requestDuration      *prometheus.HistogramVec
+	websocketConnections prometheus.Gauge
 }
 
 func NewMetrics() *Metrics {
@@ -28,9 +29,13 @@ func NewMetrics() *Metrics {
 			Help:    "HTTP request duration in seconds.",
 			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		}, []string{"method", "path", "status"}),
+		websocketConnections: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "websocket_connections_active",
+			Help: "Current number of active WebSocket connections.",
+		}),
 	}
 
-	metrics.registry.MustRegister(metrics.requestsTotal, metrics.requestDuration)
+	metrics.registry.MustRegister(metrics.requestsTotal, metrics.requestDuration, metrics.websocketConnections)
 	return metrics
 }
 
@@ -53,4 +58,8 @@ func (m *Metrics) Handler() gin.HandlerFunc {
 
 func (m *Metrics) HTTPHandler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+}
+
+func (m *Metrics) SetWebSocketConnections(count int) {
+	m.websocketConnections.Set(float64(count))
 }

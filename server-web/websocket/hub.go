@@ -31,6 +31,7 @@ type Hub struct {
 	broadcast  chan []byte
 	done       chan struct{}
 	once       sync.Once
+	observer   func(int)
 }
 
 func NewHub() *Hub {
@@ -48,9 +49,12 @@ func (h *Hub) Run(ctx context.Context) {
 		h.once.Do(func() { close(h.done) })
 		for client := range h.clients {
 			close(client.send)
-			client.conn.Close()
+			if client.conn != nil {
+				client.conn.Close()
+			}
 			delete(h.clients, client)
 		}
+		h.observeConnections()
 	}()
 
 	for {
@@ -59,10 +63,12 @@ func (h *Hub) Run(ctx context.Context) {
 			return
 		case client := <-h.register:
 			h.clients[client] = true
+			h.observeConnections()
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				h.observeConnections()
 			}
 		case message := <-h.broadcast:
 			h.broadcastMessage(message)
@@ -84,7 +90,18 @@ func (h *Hub) broadcastMessage(message []byte) {
 			slog.Warn("websocket hub: client send buffer full, disconnecting")
 			delete(h.clients, client)
 			close(client.send)
+			h.observeConnections()
 		}
+	}
+}
+
+func (h *Hub) SetConnectionObserver(observer func(int)) {
+	h.observer = observer
+}
+
+func (h *Hub) observeConnections() {
+	if h.observer != nil {
+		h.observer(len(h.clients))
 	}
 }
 

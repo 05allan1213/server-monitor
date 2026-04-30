@@ -19,6 +19,9 @@ import (
 func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, websocketHub *ws.Hub) (*gin.Engine, error) {
 	router := gin.New()
 	metrics := middleware.NewMetrics()
+	if websocketHub != nil {
+		websocketHub.SetConnectionObserver(metrics.SetWebSocketConnections)
+	}
 	router.Use(gin.Logger(), gin.Recovery(), metrics.Handler())
 
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
