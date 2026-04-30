@@ -11,6 +11,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-datasources
+  namespace: server-monitor
 data:
   datasources.yaml: |
     apiVersion: 1
@@ -29,6 +30,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboard-providers
+  namespace: server-monitor
 data:
   dashboards.yaml: |
     apiVersion: 1
@@ -50,6 +52,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboards
+  namespace: server-monitor
 data:
   host-overview.json: |
     {
@@ -241,12 +244,29 @@ data:
 
 ---
 # ------------------------------------------
-# 4. Deployment - 部署控制器
+# 4. Grafana 数据卷（PersistentVolumeClaim）
+# ------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: server-monitor
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# ------------------------------------------
+# 5. Deployment - 部署控制器
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
+  namespace: server-monitor
 spec:
   replicas: 1
   selector:
@@ -293,6 +313,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboard-providers
@@ -300,6 +322,9 @@ spec:
             - name: dashboards
               mountPath: /var/lib/grafana/dashboards
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
         - name: datasources
           configMap:
             name: grafana-datasources
@@ -312,12 +337,13 @@ spec:
 
 ---
 # ------------------------------------------
-# 5. Service - 服务发现
+# 6. Service - 服务发现
 # ------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana
+  namespace: server-monitor
 spec:
   selector:
     app: grafana

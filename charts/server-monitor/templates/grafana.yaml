@@ -248,7 +248,29 @@ data:
 
 ---
 # ------------------------------------------
-# 4. Deployment - 部署控制器
+# 4. Grafana 数据卷（PersistentVolumeClaim）
+# ------------------------------------------
+{{ if .Values.grafana.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.grafana.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.grafana.persistence.size | quote }}
+  {{ if .Values.grafana.persistence.storageClassName }}
+  storageClassName: {{ .Values.grafana.persistence.storageClassName | quote }}
+  {{ end }}
+
+---
+{{ end }}
+# ------------------------------------------
+# 5. Deployment - 部署控制器
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -310,6 +332,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboard-providers
@@ -317,6 +341,13 @@ spec:
             - name: dashboards
               mountPath: /var/lib/grafana/dashboards
       volumes:
+        - name: data
+          {{ if .Values.grafana.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: grafana-data
+          {{ else }}
+          emptyDir: {}
+          {{ end }}
         - name: datasources
           configMap:
             name: grafana-datasources
@@ -329,7 +360,7 @@ spec:
 
 ---
 # ------------------------------------------
-# 5. Service - 服务发现
+# 6. Service - 服务发现
 # ------------------------------------------
 apiVersion: v1
 kind: Service

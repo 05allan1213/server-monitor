@@ -9,8 +9,13 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: monitor-ingress
+  namespace: server-monitor
 spec:
   ingressClassName: nginx          # Ingress Controller 类型
+  tls:
+    - hosts:
+        - monitor.local
+      secretName: monitor-tls
   rules:
     - host: monitor.local          # 域名（需配置本地 hosts 或 DNS）
       http:
@@ -28,7 +33,7 @@ spec:
 # ============================================
 # 1. 安装 nginx-ingress-controller
 # 2. 配置本地 hosts: <节点IP> monitor.local
-# 3. 访问 http://monitor.local
+# 3. 访问 https://monitor.local
 #    - 前端页面: /
 #    - API: /api/v1/*
 #    - WebSocket: /ws/alerts

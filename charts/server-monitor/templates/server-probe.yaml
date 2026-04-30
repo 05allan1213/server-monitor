@@ -27,6 +27,10 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.serverProbe.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: server-probe
           image: "{{ .Values.serverProbe.image.repository }}:{{ .Values.serverProbe.image.tag }}"
@@ -54,13 +58,13 @@ spec:
               memory: 128Mi
           livenessProbe:
             httpGet:
-              path: /metrics
+              path: /healthz
               port: 9090
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /metrics
+              path: /healthz
               port: 9090
             initialDelaySeconds: 5
             periodSeconds: 5

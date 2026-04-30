@@ -9,6 +9,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: server-web-hpa
+  namespace: server-monitor
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

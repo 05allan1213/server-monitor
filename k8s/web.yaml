@@ -11,6 +11,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: server-web
+  namespace: server-monitor
 spec:
   replicas: 1
   selector:
@@ -113,6 +114,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: server-web
+  namespace: server-monitor
 spec:
   selector:
     app: server-web

@@ -41,7 +41,29 @@ data:
 
 ---
 # ------------------------------------------
-# 2. AlertManager 部署（Deployment）
+# 2. AlertManager 数据卷（PersistentVolumeClaim）
+# ------------------------------------------
+{{ if .Values.alertmanager.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-data
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.alertmanager.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.alertmanager.persistence.size | quote }}
+  {{ if .Values.alertmanager.persistence.storageClassName }}
+  storageClassName: {{ .Values.alertmanager.persistence.storageClassName | quote }}
+  {{ end }}
+
+---
+{{ end }}
+# ------------------------------------------
+# 3. AlertManager 部署（Deployment）
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -73,7 +95,6 @@ spec:
           args:
             - --config.file=/etc/alertmanager/alertmanager.yml
             - --storage.path=/alertmanager
-            - --web.enable-lifecycle
           ports:
             - containerPort: 9093
           resources:
@@ -106,11 +127,16 @@ spec:
           configMap:
             name: alertmanager-config
         - name: data
+          {{ if .Values.alertmanager.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: alertmanager-data
+          {{ else }}
           emptyDir: {}
+          {{ end }}
 
 ---
 # ------------------------------------------
-# 3. AlertManager 服务（Service）
+# 4. AlertManager 服务（Service）
 # ------------------------------------------
 apiVersion: v1
 kind: Service

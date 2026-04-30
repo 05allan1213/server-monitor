@@ -123,8 +123,11 @@ make dev-frontend
 
 当前 `k8s/` 目录中的第一阶段清单已经和现有运行模型基本对齐：
 
-- `server-web` 和 `server-probe` 都保留为 `Deployment`
+- 资源默认部署到 `server-monitor` namespace
+- `server-web` 保留为 `Deployment`，`server-probe` 使用 `DaemonSet`
 - 非敏感运行配置统一收口到 `monitor-config`
+- Redis、Prometheus、AlertManager、Grafana 默认使用 PVC 持久化，集群需要可用的默认 StorageClass
+- Ingress 默认启用 TLS，并引用 `monitor-tls` Secret
 - `server-web` 通过同一个 Service 同时承载：
   - 前端页面 `/`
   - API `/api/v1/*`

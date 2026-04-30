@@ -57,6 +57,13 @@ serverProbe:
   scrapeInterval: "5"
   hostProc: /proc
   hostSys: /sys
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
   service:
     type: ClusterIP
     port: 9090
@@ -87,6 +94,12 @@ prometheus:
   enabled: true
   image: prom/prometheus:v2.51.0
   retention: 6h
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    storageClassName: ""
   service:
     type: NodePort
     port: 9090
@@ -95,6 +108,12 @@ prometheus:
 alertmanager:
   enabled: true
   image: prom/alertmanager:v0.27.0
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClassName: ""
   service:
     type: NodePort
     port: 9093
@@ -103,6 +122,12 @@ alertmanager:
 grafana:
   enabled: true
   image: grafana/grafana:10.4.0
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+    storageClassName: ""
   service:
     type: NodePort
     port: 3000
@@ -120,3 +145,6 @@ ingress:
   host: monitor.local
   path: /
   pathType: Prefix
+  tls:
+    enabled: true
+    secretName: monitor-tls

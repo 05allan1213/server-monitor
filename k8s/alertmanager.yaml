@@ -11,6 +11,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: alertmanager-config
+  namespace: server-monitor
 data:
   alertmanager.yml: |
     global:
@@ -38,12 +39,29 @@ data:
 
 ---
 # ------------------------------------------
-# 2. AlertManager 部署（Deployment）
+# 2. AlertManager 数据卷（PersistentVolumeClaim）
+# ------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-data
+  namespace: server-monitor
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# ------------------------------------------
+# 3. AlertManager 部署（Deployment）
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: alertmanager
+  namespace: server-monitor
 spec:
   replicas: 1
   selector:
@@ -60,7 +78,6 @@ spec:
           args:
             - --config.file=/etc/alertmanager/alertmanager.yml
             - --storage.path=/alertmanager
-            - --web.enable-lifecycle
           ports:
             - containerPort: 9093
           resources:
@@ -93,16 +110,18 @@ spec:
           configMap:
             name: alertmanager-config
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: alertmanager-data
 
 ---
 # ------------------------------------------
-# 3. AlertManager 服务（Service）
+# 4. AlertManager 服务（Service）
 # ------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
   name: alertmanager
+  namespace: server-monitor
 spec:
   selector:
     app: alertmanager

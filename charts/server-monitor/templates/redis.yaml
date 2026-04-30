@@ -8,7 +8,7 @@
 # ------------------------------------------
 # PersistentVolumeClaim - Redis 数据
 # ------------------------------------------
-{{- if .Values.redis.persistence.enabled }}
+{{ if .Values.redis.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -21,12 +21,12 @@ spec:
   resources:
     requests:
       storage: {{ .Values.redis.persistence.size | quote }}
-  {{- if .Values.redis.persistence.storageClassName }}
+  {{ if .Values.redis.persistence.storageClassName }}
   storageClassName: {{ .Values.redis.persistence.storageClassName | quote }}
-  {{- end }}
+  {{ end }}
 
 ---
-{{- end }}
+{{ end }}
 # ------------------------------------------
 # Deployment - 部署控制器
 # ------------------------------------------

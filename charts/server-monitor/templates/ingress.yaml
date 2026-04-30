@@ -14,6 +14,12 @@ metadata:
     {{- include "server-monitor.labels" . | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
@@ -31,7 +37,7 @@ spec:
 # ============================================
 # 1. 安装 nginx-ingress-controller
 # 2. 配置本地 hosts: <节点IP> monitor.local
-# 3. 访问 http://monitor.local
+# 3. 访问 https://monitor.local
 #    - 前端页面: /
 #    - API: /api/v1/*
 #    - WebSocket: /ws/alerts

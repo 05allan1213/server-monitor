@@ -200,7 +200,29 @@ subjects:
 
 ---
 # ------------------------------------------
-# 4. Prometheus 部署（Deployment）
+# 4. Prometheus 数据卷（PersistentVolumeClaim）
+# ------------------------------------------
+{{ if .Values.prometheus.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.prometheus.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.prometheus.persistence.size | quote }}
+  {{ if .Values.prometheus.persistence.storageClassName }}
+  storageClassName: {{ .Values.prometheus.persistence.storageClassName | quote }}
+  {{ end }}
+
+---
+{{ end }}
+# ------------------------------------------
+# 5. Prometheus 部署（Deployment）
 # ------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -232,7 +254,6 @@ spec:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
             - "--storage.tsdb.retention.time={{ .Values.prometheus.retention }}"
-            - "--web.enable-lifecycle"
           ports:
             - containerPort: 9090
           resources:
@@ -270,11 +291,16 @@ spec:
           configMap:
             name: prometheus-rules
         - name: data
+          {{ if .Values.prometheus.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: prometheus-data
+          {{ else }}
           emptyDir: {}
+          {{ end }}
 
 ---
 # ------------------------------------------
-# 5. Prometheus 服务（Service）
+# 6. Prometheus 服务（Service）
 # ------------------------------------------
 apiVersion: v1
 kind: Service
