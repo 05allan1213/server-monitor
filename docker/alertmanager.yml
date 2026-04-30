@@ -13,3 +13,10 @@ receivers:
     webhook_configs:
       - url: 'http://server-web:8080/api/v1/webhook/alertmanager'
         send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ['instance']
