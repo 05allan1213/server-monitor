@@ -79,6 +79,7 @@ export function useAlertsWebSocket(
 
   function connect() {
     clearReconnectTimer();
+    manuallyClosed = false;
 
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       return;

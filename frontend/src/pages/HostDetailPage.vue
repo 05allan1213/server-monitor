@@ -68,30 +68,39 @@ watch(
 );
 
 let abortController: AbortController | null = null;
+let metricsRequestId = 0;
 
 async function loadMetrics() {
   if (abortController) {
     abortController.abort();
   }
-  abortController = new AbortController();
+  const requestId = ++metricsRequestId;
+  const controller = new AbortController();
+  abortController = controller;
 
   loading.value = true;
   error.value = "";
   try {
-    metrics.value = await fetchHostMetrics(
+    const data = await fetchHostMetrics(
       instanceName.value,
       { range: selectedRange.value },
-      abortController.signal,
+      controller.signal,
     );
+    if (requestId !== metricsRequestId) {
+      return;
+    }
+    metrics.value = data;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (requestId !== metricsRequestId || controller.signal.aborted) {
       return;
     }
     error.value = err instanceof Error ? err.message : "加载主机详情失败";
     metrics.value = null;
   } finally {
-    loading.value = false;
-    abortController = null;
+    if (requestId === metricsRequestId) {
+      loading.value = false;
+      abortController = null;
+    }
   }
 }
 

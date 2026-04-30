@@ -1,12 +1,24 @@
 <script setup lang="ts">
+import { computed } from "vue";
+
 import HostResourceChart from "../components/HostResourceChart.vue";
 import StatsRow from "../components/StatsRow.vue";
 import { useMonitorStore } from "../stores/monitor";
 
 const monitor = useMonitorStore();
+
+const overviewErrors = computed(() =>
+  [monitor.hostsError, monitor.alertsError, monitor.alertEventsError].filter(Boolean),
+);
 </script>
 
 <template>
+  <div v-if="overviewErrors.length > 0" class="overview-errors">
+    <div v-for="message in overviewErrors" :key="message">
+      {{ message }}
+    </div>
+  </div>
+
   <StatsRow
     :host-count="monitor.hosts.length"
     :host-count-label="monitor.hostCountLabel"
@@ -53,6 +65,18 @@ const monitor = useMonitorStore();
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.5rem;
   backdrop-filter: blur(8px);
+}
+
+.overview-errors {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
 }
 
 .panel-header {
