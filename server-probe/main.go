@@ -71,29 +71,40 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("server-probe listening", "addr", cfg.ListenAddr, "metrics_path", cfg.MetricsPath)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server-probe exited", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	defer signal.Stop(quit)
 
-	slog.Info("server-probe shutting down...")
+	exitCode := 0
+	select {
+	case sig := <-quit:
+		slog.Info("server-probe shutting down...", "signal", sig.String())
+	case err := <-serverErr:
+		slog.Error("server-probe exited", "error", err)
+		exitCode = 1
+	}
+
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server-probe shutdown error", "error", err)
 	}
+	shutdownCancel()
 
 	slog.Info("server-probe stopped")
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
 
 func updateCollectors(collectors []collector.Collector) {
