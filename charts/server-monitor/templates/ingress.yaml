@@ -1,4 +1,4 @@
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.enabled .Values.serverWeb.enabled }}
 # ============================================
 # Ingress - 入口路由配置
 # ============================================
