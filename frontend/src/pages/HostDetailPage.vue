@@ -68,18 +68,31 @@ watch(
   { deep: true },
 );
 
+let abortController: AbortController | null = null;
+
 async function loadMetrics() {
+  if (abortController) {
+    abortController.abort();
+  }
+  abortController = new AbortController();
+
   loading.value = true;
   error.value = "";
   try {
-    metrics.value = await fetchHostMetrics(decodedInstance.value, {
-      range: selectedRange.value,
-    });
+    metrics.value = await fetchHostMetrics(
+      decodedInstance.value,
+      { range: selectedRange.value },
+      abortController.signal,
+    );
   } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return;
+    }
     error.value = err instanceof Error ? err.message : "加载主机详情失败";
     metrics.value = null;
   } finally {
     loading.value = false;
+    abortController = null;
   }
 }
 

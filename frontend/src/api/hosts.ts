@@ -35,6 +35,7 @@ export interface HostMetricsQuery {
 export async function fetchHostMetrics(
   instance: string,
   query: HostMetricsQuery = {},
+  signal?: AbortSignal,
 ): Promise<HostMetricsResponse> {
   const params: Record<string, string> = {};
 
@@ -45,12 +46,23 @@ export async function fetchHostMetrics(
     params.mountpoint = query.mountpoint;
   }
 
-  return await getApiData<HostMetricsResponse>(
-    `/api/v1/hosts/${encodeURIComponent(instance)}/metrics`,
-    { params },
+  return (
+    (await getApiData<HostMetricsResponse>(
+      `/api/v1/hosts/${encodeURIComponent(instance)}/metrics`,
+      { params, signal },
+    )) ?? { metrics: {} }
   );
 }
 
 export async function fetchDashboardOverview(): Promise<DashboardOverview> {
-  return await getApiData<DashboardOverview>("/api/v1/dashboard/overview");
+  return (
+    (await getApiData<DashboardOverview>("/api/v1/dashboard/overview")) ?? {
+      total_hosts: 0,
+      healthy_hosts: 0,
+      down_hosts: 0,
+      avg_cpu: 0,
+      avg_memory: 0,
+      active_alerts: 0,
+    }
+  );
 }

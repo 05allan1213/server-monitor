@@ -44,7 +44,17 @@ export async function getApiResponse<T>(
       validateStatus: (status) => status < 600,
     });
 
-    return response.data;
+    const payload = response.data;
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      !("status" in payload) ||
+      typeof payload.status !== "string"
+    ) {
+      throw new Error("Invalid API response structure");
+    }
+
+    return payload;
   } catch (err) {
     if (axios.isAxiosError(err)) {
       throw normalizeAxiosError(err);
