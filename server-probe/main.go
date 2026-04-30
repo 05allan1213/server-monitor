@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -123,17 +124,27 @@ func main() {
 }
 
 func updateCollectors(ctx context.Context, collectors []collector.Collector) {
+	var wg sync.WaitGroup
+
 	for _, c := range collectors {
 		if err := ctx.Err(); err != nil {
-			return
+			break
 		}
-		if err := c.Update(ctx); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
+
+		wg.Add(1)
+		go func(c collector.Collector) {
+			defer wg.Done()
+
+			if err := c.Update(ctx); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+				slog.Error("collector update failed", "collector", c.Name(), "error", err)
 			}
-			slog.Error("collector update failed", "collector", c.Name(), "error", err)
-		}
+		}(c)
 	}
+
+	wg.Wait()
 }
 
 func applyHostPaths(cfg config.Config) error {
