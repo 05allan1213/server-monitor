@@ -30,6 +30,25 @@ export async function getApiData<T>(
   }
 }
 
+export async function getApiResponse<T>(
+  url: string,
+  config: AxiosRequestConfig = {},
+): Promise<ApiResponse<T>> {
+  try {
+    const response = await httpClient.get<ApiResponse<T>>(url, {
+      ...config,
+      validateStatus: (status) => status < 600,
+    });
+
+    return response.data;
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      throw normalizeAxiosError(err);
+    }
+    throw err;
+  }
+}
+
 function normalizeAxiosError(err: AxiosError<ApiResponse<unknown>>): Error {
   const payloadError = err.response?.data?.error;
   if (payloadError) {

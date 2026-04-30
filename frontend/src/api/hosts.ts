@@ -1,5 +1,5 @@
 import { getApiData } from "./client";
-import type { Host } from "../types";
+import type { DashboardOverview, Host, HostMetricsResponse } from "../types";
 
 export interface HostsQuery {
   status?: "all" | "up" | "down";
@@ -25,4 +25,32 @@ export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
   }
 
   return (await getApiData<Host[]>("/api/v1/hosts", { params })) ?? [];
+}
+
+export interface HostMetricsQuery {
+  range?: "15m" | "1h" | "6h" | "24h";
+  mountpoint?: string;
+}
+
+export async function fetchHostMetrics(
+  instance: string,
+  query: HostMetricsQuery = {},
+): Promise<HostMetricsResponse> {
+  const params: Record<string, string> = {};
+
+  if (query.range) {
+    params.range = query.range;
+  }
+  if (query.mountpoint) {
+    params.mountpoint = query.mountpoint;
+  }
+
+  return await getApiData<HostMetricsResponse>(
+    `/api/v1/hosts/${encodeURIComponent(instance)}/metrics`,
+    { params },
+  );
+}
+
+export async function fetchDashboardOverview(): Promise<DashboardOverview> {
+  return await getApiData<DashboardOverview>("/api/v1/dashboard/overview");
 }

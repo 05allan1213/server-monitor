@@ -1,9 +1,16 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { RouterLink } from "vue-router";
+
 import type { Host } from "../types";
 
-defineProps<{
+const props = defineProps<{
   host: Host;
 }>();
+
+const detailPath = computed(
+  () => `/hosts/${encodeURIComponent(props.host.instance)}`,
+);
 
 function cpuColor(value: number): string {
   if (value >= 80) return "var(--danger)";
@@ -171,6 +178,9 @@ function formatTime(iso: string): string {
         <polyline points="12 6 12 12 16 14" />
       </svg>
       最后采集: {{ formatTime(host.lastScrape) }}
+      <RouterLink class="host-detail-link" :to="detailPath">
+        详情
+      </RouterLink>
     </div>
   </div>
 </template>
@@ -364,5 +374,16 @@ function formatTime(iso: string): string {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.host-detail-link {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.host-detail-link:hover {
+  color: var(--text-primary);
 }
 </style>

@@ -188,6 +188,9 @@ onBeforeUnmount(() => {
       <RouterLink to="/hosts" class="route-tab" exact-active-class="active">
         主机
       </RouterLink>
+      <RouterLink to="/status" class="route-tab" exact-active-class="active">
+        状态
+      </RouterLink>
       <RouterLink to="/alerts" class="route-tab" exact-active-class="active">
         告警
       </RouterLink>
