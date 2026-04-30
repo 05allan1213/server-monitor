@@ -1,6 +1,12 @@
 global:
   imagePullPolicy: IfNotPresent
   timezone: Asia/Shanghai
+  podSecurityContext: {}
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 config:
   prometheusUrl: http://prometheus:9090
@@ -10,6 +16,11 @@ config:
   readyTimeoutSeconds: "3"
   requestTimeoutSeconds: "5"
   hostsCacheTTLSeconds: "30"
+
+secret:
+  create: true
+  name: monitor-secret
+  redisPassword: ""
 
 rateLimit:
   enabled: true

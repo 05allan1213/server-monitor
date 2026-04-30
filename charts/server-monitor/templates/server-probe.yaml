@@ -23,10 +23,18 @@ spec:
       labels:
         app: server-probe
     spec:
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: server-probe
           image: "{{ .Values.serverProbe.image.repository }}:{{ .Values.serverProbe.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with .Values.global.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - containerPort: 9090
               name: metrics

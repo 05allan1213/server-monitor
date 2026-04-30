@@ -24,10 +24,18 @@ spec:
       labels:
         app: server-web
     spec:
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: server-web
           image: "{{ .Values.serverWeb.image.repository }}:{{ .Values.serverWeb.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with .Values.global.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - containerPort: 8080
           resources:
@@ -62,6 +70,12 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: REDIS_ADDR
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: REDIS_PASSWORD
+                  optional: true
             - name: GIN_MODE
               valueFrom:
                 configMapKeyRef:
