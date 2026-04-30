@@ -25,6 +25,13 @@ type wsMessage struct {
 	Data interface{} `json:"data"`
 }
 
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 15 * time.Second
+	httpWriteTimeout      = 30 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+)
+
 func main() {
 	cfg := config.Load()
 	gin.SetMode(cfg.GinMode)
@@ -65,8 +72,12 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    cfg.ListenAddr,
-		Handler: router,
+		Addr:              cfg.ListenAddr,
+		Handler:           router,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
 	}
 
 	serverErr := make(chan error, 1)
