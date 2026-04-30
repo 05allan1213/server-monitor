@@ -130,30 +130,6 @@ func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, er
 	return c.client.HGetAll(ctx, key).Result()
 }
 
-func (c *Client) LPushTrim(ctx context.Context, key string, maxLen int64, value []byte) error {
-	if !c.Enabled() {
-		return errors.New("redis is not enabled")
-	}
-	if maxLen <= 0 {
-		return errors.New("max list length must be positive")
-	}
-
-	pipe := c.client.TxPipeline()
-	pipe.LPush(ctx, key, value)
-	pipe.LTrim(ctx, key, 0, maxLen-1)
-
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
-	if !c.Enabled() {
-		return nil, errors.New("redis is not enabled")
-	}
-
-	return c.client.LRange(ctx, key, start, stop).Result()
-}
-
 func (c *Client) AllowSlidingWindow(ctx context.Context, key string, limit int64, window time.Duration, now time.Time) (bool, int64, error) {
 	if !c.Enabled() {
 		return false, 0, errors.New("redis is not enabled")
