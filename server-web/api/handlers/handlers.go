@@ -24,6 +24,7 @@ type cacheClient interface {
 	Ping(ctx context.Context) error
 	Get(ctx context.Context, key string) ([]byte, bool)
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
 	HSet(ctx context.Context, key, field string, value []byte) error
 	HDel(ctx context.Context, key, field string) error
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
@@ -49,6 +50,7 @@ type response struct {
 
 const defaultAlertEventsLimit int64 = 8
 const dashboardOverviewTTL = 10 * time.Second
+const alertEventDedupeTTL = 24 * time.Hour
 
 type hostMetricsRange struct {
 	duration time.Duration
@@ -385,6 +387,18 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			return
 		}
 
+		firstSeen, err := h.cacheClient.SetNX(ctx, alertEventDedupeKey(alert), []byte(receivedAt.Format(time.RFC3339Nano)), alertEventDedupeTTL)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, response{
+				Status: "error",
+				Error:  fmt.Sprintf("check alert event dedupe failed: %v", err),
+			})
+			return
+		}
+		if !firstSeen {
+			continue
+		}
+
 		if err := h.cacheClient.XAddMaxLen(ctx, rediscache.AlertEventsKey, rediscache.AlertEventsMax, event); err != nil {
 			c.JSON(http.StatusBadGateway, response{
 				Status: "error",
@@ -613,6 +627,16 @@ func parseAlertEventsLimit(raw string) int64 {
 	}
 
 	return parsed
+}
+
+func alertEventDedupeKey(alert webhook.AlertRecord) string {
+	return fmt.Sprintf("%s:%s:%s:%s:%s",
+		rediscache.AlertEventDedupeKey,
+		alert.Fingerprint,
+		alert.Status,
+		alert.StartsAt.UTC().Format(time.RFC3339Nano),
+		alert.EndsAt.UTC().Format(time.RFC3339Nano),
+	)
 }
 
 func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {

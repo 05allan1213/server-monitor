@@ -66,6 +66,14 @@ func (c *Client) Set(ctx context.Context, key string, value []byte, ttl time.Dur
 	return c.client.Set(ctx, key, value, ttl).Err()
 }
 
+func (c *Client) SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	if !c.Enabled() {
+		return false, errors.New("redis is not enabled")
+	}
+
+	return c.client.SetNX(ctx, key, value, ttl).Result()
+}
+
 func (c *Client) HSet(ctx context.Context, key, field string, value []byte) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")
