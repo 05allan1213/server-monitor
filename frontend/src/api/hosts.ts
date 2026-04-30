@@ -1,6 +1,5 @@
-import type { Host, ApiResponse } from "../types";
-
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+import { getApiData } from "./client";
+import type { Host } from "../types";
 
 export interface HostsQuery {
   status?: "all" | "up" | "down";
@@ -10,39 +9,20 @@ export interface HostsQuery {
 }
 
 export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const params: Record<string, string> = {};
 
-  try {
-    const url = new URL(`${apiBaseUrl}/api/v1/hosts`, window.location.origin);
-    if (query.status && query.status !== "all") {
-      url.searchParams.set("status", query.status);
-    }
-    if (query.q) {
-      url.searchParams.set("q", query.q);
-    }
-    if (query.sort && query.sort !== "instance") {
-      url.searchParams.set("sort", query.sort);
-    }
-    if (query.risk && query.risk !== "all") {
-      url.searchParams.set("risk", query.risk);
-    }
-
-    const response = await fetch(url.toString(), {
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
-    }
-
-    const payload = (await response.json()) as ApiResponse<Host[]>;
-    if (payload.status !== "success") {
-      throw new Error(payload.error ?? "Unknown API error");
-    }
-
-    return payload.data ?? [];
-  } finally {
-    clearTimeout(timeoutId);
+  if (query.status && query.status !== "all") {
+    params.status = query.status;
   }
+  if (query.q) {
+    params.q = query.q;
+  }
+  if (query.sort && query.sort !== "instance") {
+    params.sort = query.sort;
+  }
+  if (query.risk && query.risk !== "all") {
+    params.risk = query.risk;
+  }
+
+  return (await getApiData<Host[]>("/api/v1/hosts", { params })) ?? [];
 }
