@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -12,6 +13,8 @@ type CPUCollector struct {
 	usage    *prometheus.GaugeVec
 	hostname string
 }
+
+const cpuSampleInterval = 100 * time.Millisecond
 
 func NewCPUCollector(hostname string) *CPUCollector {
 	return &CPUCollector{
@@ -39,7 +42,7 @@ func (c *CPUCollector) Update(ctx context.Context) error {
 		return err
 	}
 
-	percentages, err := cpu.Percent(0, false)
+	percentages, err := cpu.PercentWithContext(ctx, cpuSampleInterval, false)
 	if err != nil {
 		return err
 	}
