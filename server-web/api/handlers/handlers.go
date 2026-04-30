@@ -27,8 +27,8 @@ type cacheClient interface {
 	HSet(ctx context.Context, key, field string, value []byte) error
 	HDel(ctx context.Context, key, field string) error
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
-	LPushTrim(ctx context.Context, key string, maxLen int64, value []byte) error
-	LRange(ctx context.Context, key string, start, stop int64) ([]string, error)
+	XAddMaxLen(ctx context.Context, key string, maxLen int64, value []byte) error
+	XRevRangeN(ctx context.Context, key string, count int64) ([]string, error)
 	Publish(ctx context.Context, channel string, message []byte) error
 }
 
@@ -385,7 +385,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			return
 		}
 
-		if err := h.cacheClient.LPushTrim(ctx, rediscache.AlertEventsKey, rediscache.AlertEventsMax, event); err != nil {
+		if err := h.cacheClient.XAddMaxLen(ctx, rediscache.AlertEventsKey, rediscache.AlertEventsMax, event); err != nil {
 			c.JSON(http.StatusBadGateway, response{
 				Status: "error",
 				Error:  fmt.Sprintf("store alert event failed: %v", err),
@@ -457,7 +457,7 @@ func (h *Handler) AlertEvents(c *gin.Context) {
 	statusFilter := parseAlertEventFilter(c.Query("status"), validAlertEventStatuses)
 	severityFilter := parseAlertEventFilter(c.Query("severity"), validAlertEventSeverities)
 
-	values, err := h.cacheClient.LRange(ctx, rediscache.AlertEventsKey, 0, limit-1)
+	values, err := h.cacheClient.XRevRangeN(ctx, rediscache.AlertEventsKey, limit)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
 			Status: "error",

@@ -114,6 +114,58 @@ func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]s
 	return c.client.LRange(ctx, key, start, stop).Result()
 }
 
+func (c *Client) XAddMaxLen(ctx context.Context, key string, maxLen int64, value []byte) error {
+	if !c.Enabled() {
+		return errors.New("redis is not enabled")
+	}
+	if maxLen <= 0 {
+		return errors.New("max stream length must be positive")
+	}
+
+	return c.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: key,
+		MaxLen: maxLen,
+		Approx: true,
+		Values: map[string]interface{}{
+			AlertEventPayload: string(value),
+		},
+	}).Err()
+}
+
+func (c *Client) XRevRangeN(ctx context.Context, key string, count int64) ([]string, error) {
+	if !c.Enabled() {
+		return nil, errors.New("redis is not enabled")
+	}
+	if count <= 0 {
+		return nil, errors.New("stream count must be positive")
+	}
+
+	messages, err := c.client.XRevRangeN(ctx, key, "+", "-", count).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	values := make([]string, 0, len(messages))
+	for _, message := range messages {
+		raw, ok := message.Values[AlertEventPayload]
+		if !ok {
+			slog.Warn("skip alert event stream message without payload", "key", key, "id", message.ID)
+			continue
+		}
+
+		switch value := raw.(type) {
+		case string:
+			values = append(values, value)
+		case []byte:
+			values = append(values, string(value))
+		default:
+			slog.Warn("skip alert event stream message with invalid payload", "key", key, "id", message.ID)
+		}
+	}
+
+	return values, nil
+}
+
 func (c *Client) Publish(ctx context.Context, channel string, message []byte) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")
