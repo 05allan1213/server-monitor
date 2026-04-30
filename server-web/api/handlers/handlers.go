@@ -370,6 +370,12 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			})
 			return
 		}
+	}
+
+	for _, alert := range payload.Alerts {
+		if alert.Fingerprint == "" {
+			continue
+		}
 
 		message, err := json.Marshal(alert)
 		if err != nil {
