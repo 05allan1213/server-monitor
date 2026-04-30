@@ -20,6 +20,7 @@ const props = defineProps<{
 const chartEl = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let resizeDebounceTimer: number | null = null;
 
 type TooltipItem = {
   axisValueLabel?: string;
@@ -60,7 +61,15 @@ function initChart() {
   }
 
   chart = echarts.init(chartEl.value, "dark");
-  resizeObserver = new ResizeObserver(() => chart?.resize());
+  resizeObserver = new ResizeObserver(() => {
+    if (resizeDebounceTimer !== null) {
+      clearTimeout(resizeDebounceTimer);
+    }
+    resizeDebounceTimer = window.setTimeout(() => {
+      chart?.resize();
+      resizeDebounceTimer = null;
+    }, 100);
+  });
   resizeObserver.observe(chartEl.value);
   renderChart();
 }

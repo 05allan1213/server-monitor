@@ -6,6 +6,9 @@ const monitor = useMonitorStore();
 </script>
 
 <template>
+  <div v-if="monitor.hostsError" class="hosts-error">
+    {{ monitor.hostsError }}
+  </div>
   <HostsPanel
     :hosts="monitor.hosts"
     :loading="monitor.loading"
@@ -25,3 +28,15 @@ const monitor = useMonitorStore();
     @reset-filters="monitor.resetHostFilters"
   />
 </template>
+
+<style scoped>
+.hosts-error {
+  margin-bottom: 1rem;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+}
+</style>

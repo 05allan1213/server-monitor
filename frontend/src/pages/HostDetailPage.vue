@@ -31,9 +31,9 @@ const chartEl = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
-const decodedInstance = computed(() => props.instance);
+const instanceName = computed(() => props.instance);
 const currentHost = computed(() =>
-  monitor.hosts.find((host) => host.instance === decodedInstance.value),
+  monitor.hosts.find((host) => host.instance === instanceName.value),
 );
 const hasPercentSeries = computed(() =>
   ["cpu", "memory", "disk"].some((name) => firstSeries(name)?.values.length),
@@ -65,7 +65,6 @@ watch(
   () => {
     renderChart();
   },
-  { deep: true },
 );
 
 let abortController: AbortController | null = null;
@@ -80,7 +79,7 @@ async function loadMetrics() {
   error.value = "";
   try {
     metrics.value = await fetchHostMetrics(
-      decodedInstance.value,
+      instanceName.value,
       { range: selectedRange.value },
       abortController.signal,
     );
@@ -96,13 +95,23 @@ async function loadMetrics() {
   }
 }
 
+let resizeDebounceTimer: number | null = null;
+
 function initChart() {
   if (!chartEl.value) {
     return;
   }
 
   chart = echarts.init(chartEl.value, "dark");
-  resizeObserver = new ResizeObserver(() => chart?.resize());
+  resizeObserver = new ResizeObserver(() => {
+    if (resizeDebounceTimer !== null) {
+      clearTimeout(resizeDebounceTimer);
+    }
+    resizeDebounceTimer = window.setTimeout(() => {
+      chart?.resize();
+      resizeDebounceTimer = null;
+    }, 100);
+  });
   resizeObserver.observe(chartEl.value);
   renderChart();
 }
@@ -259,7 +268,7 @@ function cssVar(name: string, fallback: string): string {
   <section class="detail-header">
     <div>
       <RouterLink to="/hosts" class="back-link">返回主机列表</RouterLink>
-      <h2>{{ decodedInstance }}</h2>
+      <h2>{{ instanceName }}</h2>
       <p>
         {{
           currentHost

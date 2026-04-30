@@ -48,7 +48,11 @@ async function loadStatus() {
       (result) => result.status === "rejected",
     );
     if (failed.length > 0) {
-      error.value = "部分状态接口暂时不可用";
+      const failedNames: string[] = [];
+      if (healthResult.status === "rejected") failedNames.push("健康检查");
+      if (readyResult.status === "rejected") failedNames.push("就绪检查");
+      if (overviewResult.status === "rejected") failedNames.push("监控概览");
+      error.value = `以下接口暂时不可用: ${failedNames.join("、")}`;
     }
   } finally {
     loading.value = false;

@@ -10,6 +10,7 @@ const beijingTime = ref("");
 const beijingTimer = ref<number | null>(null);
 const updateAgoTimer = ref<number | null>(null);
 const isFullscreen = ref(false);
+const fullscreenError = ref("");
 
 const { connectionState, connect, disconnect } = useAlertsWebSocket(
   monitor.applyIncomingAlert,
@@ -49,10 +50,17 @@ function updateBeijingTime() {
 }
 
 function toggleFullscreen() {
+  fullscreenError.value = "";
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
+    document.documentElement.requestFullscreen().catch((err) => {
+      fullscreenError.value = "无法进入全屏模式";
+      console.warn("Fullscreen request failed:", err);
+    });
   } else {
-    document.exitFullscreen().catch(() => {});
+    document.exitFullscreen().catch((err) => {
+      fullscreenError.value = "无法退出全屏模式";
+      console.warn("Exit fullscreen failed:", err);
+    });
   }
 }
 
@@ -64,7 +72,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
     return;
   }
-  if ((e.target as HTMLElement).isContentEditable) {
+  if (e.target instanceof HTMLElement && e.target.isContentEditable) {
     return;
   }
   if (e.ctrlKey || e.altKey || e.metaKey) {
@@ -170,6 +178,7 @@ onBeforeUnmount(() => {
             <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
           </svg>
         </button>
+        <span v-if="fullscreenError" class="fullscreen-error">{{ fullscreenError }}</span>
         <div class="ws-status" :class="'ws-' + connectionState">
           <span class="ws-dot"></span>
           <span>{{ connectionLabel }}</span>
@@ -378,6 +387,14 @@ onBeforeUnmount(() => {
 .fullscreen-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.fullscreen-error {
+  font-size: 0.7rem;
+  color: var(--warning);
+  background: var(--warning-soft);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
 }
 
 .ws-status {

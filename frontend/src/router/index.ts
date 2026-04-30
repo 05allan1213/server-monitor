@@ -1,39 +1,33 @@
 import { createRouter, createWebHistory } from "vue-router";
 
-import AlertsPage from "../pages/AlertsPage.vue";
-import HostDetailPage from "../pages/HostDetailPage.vue";
-import HostsPage from "../pages/HostsPage.vue";
-import OverviewPage from "../pages/OverviewPage.vue";
-import StatusPage from "../pages/StatusPage.vue";
-
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: "/",
       name: "overview",
-      component: OverviewPage,
+      component: () => import("../pages/OverviewPage.vue"),
     },
     {
       path: "/hosts",
       name: "hosts",
-      component: HostsPage,
+      component: () => import("../pages/HostsPage.vue"),
     },
     {
       path: "/hosts/:instance",
       name: "host-detail",
-      component: HostDetailPage,
+      component: () => import("../pages/HostDetailPage.vue"),
       props: true,
     },
     {
       path: "/status",
       name: "status",
-      component: StatusPage,
+      component: () => import("../pages/StatusPage.vue"),
     },
     {
       path: "/alerts",
       name: "alerts",
-      component: AlertsPage,
+      component: () => import("../pages/AlertsPage.vue"),
     },
     {
       path: "/:pathMatch(.*)*",
