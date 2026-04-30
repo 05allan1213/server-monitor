@@ -16,6 +16,14 @@ type Client struct {
 	enabled bool
 }
 
+const (
+	defaultDialTimeout     = 5 * time.Second
+	defaultReadTimeout     = 3 * time.Second
+	defaultWriteTimeout    = 3 * time.Second
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 5 * time.Minute
+)
+
 func NewClient(addr, password string, db int) *Client {
 	if addr == "" {
 		return &Client{}
@@ -23,9 +31,14 @@ func NewClient(addr, password string, db int) *Client {
 
 	return &Client{
 		client: redis.NewClient(&redis.Options{
-			Addr:     addr,
-			Password: password,
-			DB:       db,
+			Addr:            addr,
+			Password:        password,
+			DB:              db,
+			DialTimeout:     defaultDialTimeout,
+			ReadTimeout:     defaultReadTimeout,
+			WriteTimeout:    defaultWriteTimeout,
+			ConnMaxLifetime: defaultConnMaxLifetime,
+			ConnMaxIdleTime: defaultConnMaxIdleTime,
 		}),
 		enabled: true,
 	}

@@ -30,6 +30,7 @@ const (
 	httpReadTimeout       = 15 * time.Second
 	httpWriteTimeout      = 30 * time.Second
 	httpIdleTimeout       = 120 * time.Second
+	redisStartupTimeout   = 5 * time.Second
 )
 
 func main() {
@@ -48,9 +49,11 @@ func main() {
 
 	var subscriberDone <-chan struct{}
 	if redisClient.Enabled() {
-		if err := redisClient.Ping(context.Background()); err != nil {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), redisStartupTimeout)
+		if err := redisClient.Ping(pingCtx); err != nil {
 			slog.Error("redis ping failed at startup", "addr", cfg.RedisAddr, "error", err)
 		}
+		pingCancel()
 
 		subscriber := pubsub.NewSubscriber(redisClient, alertHub, rediscache.AlertChannel)
 		done := make(chan struct{})
