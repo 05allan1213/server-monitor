@@ -49,6 +49,24 @@ type response struct {
 
 const defaultAlertEventsLimit int64 = 8
 
+type hostMetricsRange struct {
+	duration time.Duration
+	step     time.Duration
+}
+
+type hostMetricQuery struct {
+	name   string
+	metric string
+	params map[string]string
+}
+
+type hostMetricsResponse struct {
+	Instance    string                              `json:"instance"`
+	Range       string                              `json:"range"`
+	StepSeconds int64                               `json:"stepSeconds"`
+	Metrics     map[string][]promclient.RangeSeries `json:"metrics"`
+}
+
 var validAlertEventStatuses = map[string]struct{}{
 	"firing":   {},
 	"resolved": {},
@@ -80,6 +98,25 @@ var validHostSorts = map[string]struct{}{
 var validHostRisks = map[string]struct{}{
 	"high_cpu":    {},
 	"high_memory": {},
+}
+
+var validHostMetricsRanges = map[string]hostMetricsRange{
+	"15m": {
+		duration: 15 * time.Minute,
+		step:     15 * time.Second,
+	},
+	"1h": {
+		duration: time.Hour,
+		step:     time.Minute,
+	},
+	"6h": {
+		duration: 6 * time.Hour,
+		step:     5 * time.Minute,
+	},
+	"24h": {
+		duration: 24 * time.Hour,
+		step:     15 * time.Minute,
+	},
 }
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
@@ -181,6 +218,56 @@ func (h *Handler) Hosts(c *gin.Context) {
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data:   sortHosts(filterHosts(hosts, statusFilter, queryFilter, riskFilter), sortBy),
+	})
+}
+
+func (h *Handler) HostMetrics(c *gin.Context) {
+	instance := strings.TrimSpace(c.Param("instance"))
+	if instance == "" {
+		c.JSON(http.StatusBadRequest, response{
+			Status: "error",
+			Error:  "instance is required",
+		})
+		return
+	}
+
+	rangeName, rangeConfig, ok := parseHostMetricsRange(c.Query("range"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, response{
+			Status: "error",
+			Error:  "invalid range, allowed values: 15m, 1h, 6h, 24h",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
+	defer cancel()
+
+	end := time.Now().UTC()
+	start := end.Add(-rangeConfig.duration)
+	queries := buildHostMetricQueries(c.Query("mountpoint"))
+
+	metrics := make(map[string][]promclient.RangeSeries, len(queries))
+	for _, query := range queries {
+		series, err := h.promClient.QueryRange(ctx, query.metric, instance, query.params, start, end, rangeConfig.step)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, response{
+				Status: "error",
+				Error:  fmt.Sprintf("query host metric %s failed: %v", query.name, err),
+			})
+			return
+		}
+		metrics[query.name] = series
+	}
+
+	c.JSON(http.StatusOK, response{
+		Status: "success",
+		Data: hostMetricsResponse{
+			Instance:    instance,
+			Range:       rangeName,
+			StepSeconds: int64(rangeConfig.step.Seconds()),
+			Metrics:     metrics,
+		},
 	})
 }
 
@@ -553,6 +640,33 @@ func parseHostRisk(raw string) string {
 	}
 
 	return raw
+}
+
+func parseHostMetricsRange(raw string) (string, hostMetricsRange, bool) {
+	if raw == "" {
+		raw = "1h"
+	}
+
+	parsed, ok := validHostMetricsRanges[raw]
+	return raw, parsed, ok
+}
+
+func buildHostMetricQueries(mountpoint string) []hostMetricQuery {
+	mountpoint = strings.TrimSpace(mountpoint)
+	if mountpoint == "" {
+		mountpoint = "/"
+	}
+
+	return []hostMetricQuery{
+		{name: "cpu", metric: promclient.MetricCPUUsage},
+		{name: "memory", metric: promclient.MetricMemoryUsage},
+		{name: "disk", metric: promclient.MetricDiskUsage, params: map[string]string{"mountpoint": mountpoint}},
+		{name: "network_recv", metric: promclient.MetricNetworkRecv},
+		{name: "network_sent", metric: promclient.MetricNetworkSent},
+		{name: "load1", metric: promclient.MetricLoad1},
+		{name: "process_count", metric: promclient.MetricProcessCount},
+		{name: "uptime", metric: promclient.MetricUptime},
+	}
 }
 
 func sortHosts(hosts []promclient.Host, sortBy string) []promclient.Host {
