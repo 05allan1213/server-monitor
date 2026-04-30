@@ -75,7 +75,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secret.name | quote }}
                   key: REDIS_PASSWORD
-                  optional: true
             - name: GIN_MODE
               valueFrom:
                 configMapKeyRef:

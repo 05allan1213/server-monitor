@@ -44,9 +44,9 @@ dev-deps:
 
 dev-web:
 	@echo "本地启动 server-web..."
-	@echo "环境变量: PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379"
+	@echo "环境变量: PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 REDIS_PASSWORD=server-monitor-local-redis"
 	@echo "访问地址: http://localhost:8080/healthz 和 http://localhost:8080/readyz"
-	cd server-web && PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 GIN_MODE=debug go run main.go
+	cd server-web && PROMETHEUS_URL=http://localhost:9091 REDIS_ADDR=localhost:6379 REDIS_PASSWORD=server-monitor-local-redis GIN_MODE=debug go run main.go
 
 dev-frontend:
 	@echo "本地启动前端开发服务器..."

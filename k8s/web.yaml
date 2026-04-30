@@ -59,6 +59,11 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: REDIS_ADDR
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: monitor-secret
+                  key: REDIS_PASSWORD
             - name: GIN_MODE
               valueFrom:
                 configMapKeyRef:

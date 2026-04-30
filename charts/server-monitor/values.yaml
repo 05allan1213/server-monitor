@@ -20,7 +20,9 @@ config:
 secret:
   create: true
   name: monitor-secret
-  redisPassword: ""
+  redisPassword: server-monitor-change-me
+  grafanaAdminUser: admin
+  grafanaAdminPassword: server-monitor-change-me
 
 rateLimit:
   enabled: true
@@ -69,6 +71,14 @@ serverProbe:
 redis:
   enabled: true
   image: redis:7-alpine
+  maxmemory: 96mb
+  maxmemoryPolicy: allkeys-lru
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClassName: ""
   service:
     type: ClusterIP
     port: 6379

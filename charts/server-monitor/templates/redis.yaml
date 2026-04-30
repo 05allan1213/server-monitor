@@ -6,6 +6,28 @@
 # ============================================
 
 # ------------------------------------------
+# PersistentVolumeClaim - Redis 数据
+# ------------------------------------------
+{{- if .Values.redis.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.redis.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.redis.persistence.size | quote }}
+  {{- if .Values.redis.persistence.storageClassName }}
+  storageClassName: {{ .Values.redis.persistence.storageClassName | quote }}
+  {{- end }}
+
+---
+{{- end }}
+# ------------------------------------------
 # Deployment - 部署控制器
 # ------------------------------------------
 apiVersion: apps/v1
@@ -35,8 +57,25 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          command:
+            - redis-server
+          args:
+            - --requirepass
+            - $(REDIS_PASSWORD)
+            - --appendonly
+            - "yes"
+            - --maxmemory
+            - {{ .Values.redis.maxmemory | quote }}
+            - --maxmemory-policy
+            - {{ .Values.redis.maxmemoryPolicy | quote }}
           ports:
             - containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: REDIS_PASSWORD
           resources:
             requests:
               cpu: 50m
@@ -46,14 +85,31 @@ spec:
               memory: 128Mi
           livenessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command:
+                - sh
+                - -c
+                - REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command:
+                - sh
+                - -c
+                - REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping
             initialDelaySeconds: 3
             periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{ if .Values.redis.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: redis-data
+          {{ else }}
+          emptyDir: {}
+          {{ end }}
 
 ---
 # ------------------------------------------

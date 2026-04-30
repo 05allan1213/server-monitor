@@ -279,6 +279,17 @@ spec:
           {{- end }}
           ports:
             - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: GRAFANA_ADMIN_USER
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: GRAFANA_ADMIN_PASSWORD
           resources:
             requests:
               cpu: 100m
