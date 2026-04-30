@@ -84,12 +84,10 @@ export function useAlertsWebSocket(
       return;
     }
 
-    reconnectDelay = 1000;
     connectionState.value = "connecting";
     socket = new WebSocket(buildWebSocketUrl());
 
     socket.onopen = () => {
-      manuallyClosed = false;
       reconnectDelay = 1000;
       connectionState.value = "connected";
     };
