@@ -1,34 +1,23 @@
 <script setup lang="ts">
 import HostResourceChart from "../components/HostResourceChart.vue";
 import StatsRow from "../components/StatsRow.vue";
-import type { Host } from "../types";
+import { useMonitorStore } from "../stores/monitor";
 
-defineProps<{
-  hosts: Host[];
-  hostCountLabel: string;
-  highCPUHostCount: number;
-  highMemoryHostCount: number;
-  bothRiskHostCount: number;
-  activeAlertCount: number;
-  alertEventCount: number;
-  criticalCount: number;
-  warningCount: number;
-  infoCount: number;
-}>();
+const monitor = useMonitorStore();
 </script>
 
 <template>
   <StatsRow
-    :host-count="hosts.length"
-    :host-count-label="hostCountLabel"
-    :high-cpu-host-count="highCPUHostCount"
-    :high-memory-host-count="highMemoryHostCount"
-    :both-risk-host-count="bothRiskHostCount"
-    :active-alert-count="activeAlertCount"
-    :alert-event-count="alertEventCount"
-    :critical-count="criticalCount"
-    :warning-count="warningCount"
-    :info-count="infoCount"
+    :host-count="monitor.hosts.length"
+    :host-count-label="monitor.hostCountLabel"
+    :high-cpu-host-count="monitor.highCPUHostCount"
+    :high-memory-host-count="monitor.highMemoryHostCount"
+    :both-risk-host-count="monitor.bothRiskHostCount"
+    :active-alert-count="monitor.alerts.length"
+    :alert-event-count="monitor.alertEvents.length"
+    :critical-count="monitor.criticalCount"
+    :warning-count="monitor.warningCount"
+    :info-count="monitor.infoCount"
   />
 
   <section class="panel">
@@ -52,7 +41,7 @@ defineProps<{
       </div>
       <span class="panel-badge">ECharts</span>
     </div>
-    <HostResourceChart :hosts="hosts" />
+    <HostResourceChart :hosts="monitor.hosts" />
   </section>
 </template>
 

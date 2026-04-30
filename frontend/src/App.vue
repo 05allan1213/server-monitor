@@ -1,118 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView } from "vue-router";
 
-import { fetchActiveAlerts, fetchAlertEvents } from "./api/alerts";
-import { fetchHosts } from "./api/hosts";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
-import type { AlertEvent, AlertRecord, Host } from "./types";
+import { useMonitorStore } from "./stores/monitor";
 
-const alerts = ref<AlertRecord[]>([]);
-const alertEvents = ref<AlertEvent[]>([]);
-const hosts = ref<Host[]>([]);
-const loading = ref(true);
-const refreshing = ref(false);
-const alertsError = ref("");
-const alertEventsError = ref("");
-const hostSearchInput = ref("");
-const appliedHostQuery = ref("");
-const selectedSeverity = ref<"all" | "critical" | "warning" | "info">("all");
+const monitor = useMonitorStore();
 const beijingTime = ref("");
 const beijingTimer = ref<number | null>(null);
-const lastUpdateTime = ref(Date.now());
-const updateAgo = ref("");
 const updateAgoTimer = ref<number | null>(null);
 const isFullscreen = ref(false);
-const toasts = ref<{ id: number; message: string; severity: string }[]>(
-  [],
-);
-let toastId = 0;
-const toastTimers: number[] = [];
 
 const { connectionState, connect, disconnect } = useAlertsWebSocket(
-  applyIncomingAlert,
-  applyIncomingHosts,
+  monitor.applyIncomingAlert,
+  monitor.applyIncomingHosts,
 );
-
-const criticalCount = computed(
-  () =>
-    alerts.value.filter((a) => (a.labels.severity ?? "info") === "critical")
-      .length,
-);
-const warningCount = computed(
-  () =>
-    alerts.value.filter((a) => (a.labels.severity ?? "info") === "warning")
-      .length,
-);
-const infoCount = computed(
-  () =>
-    alerts.value.filter((a) => (a.labels.severity ?? "info") === "info")
-      .length,
-);
-const alertEventsLimit = 8;
-const selectedHostStatus = ref<"all" | "up" | "down">("all");
-const selectedHostSort = ref<"instance" | "cpu_desc" | "memory_desc">("instance");
-const selectedHostRisk = ref<"all" | "high_cpu" | "high_memory">("all");
-const selectedEventStatus = ref<"all" | "firing" | "resolved">("all");
-const selectedEventSeverity = ref<"all" | "critical" | "warning" | "info">("all");
-
-const latestAlertEvents = computed(() => alertEvents.value.slice(0, alertEventsLimit));
-const hostCountLabel = computed(() => {
-  switch (selectedHostStatus.value) {
-    case "up":
-      return "在线主机";
-    case "down":
-      return "离线主机";
-    default:
-      return "当前主机";
-  }
-});
-const highCPUHostCount = computed(() => hosts.value.filter((host) => isHighCPU(host)).length);
-const highMemoryHostCount = computed(() => hosts.value.filter((host) => isHighMemory(host)).length);
-const bothRiskHostCount = computed(() => hosts.value.filter((host) => hostRiskVariant(host) === "both").length);
-const hostFilterSummary = computed(() => {
-  const parts: string[] = [];
-
-  if (selectedHostStatus.value === "up") {
-    parts.push("在线");
-  } else if (selectedHostStatus.value === "down") {
-    parts.push("离线");
-  }
-
-  if (appliedHostQuery.value) {
-    parts.push(`搜索: ${appliedHostQuery.value}`);
-  }
-
-  switch (selectedHostSort.value) {
-    case "cpu_desc":
-      parts.push("按 CPU 排序");
-      break;
-    case "memory_desc":
-      parts.push("按内存排序");
-      break;
-  }
-
-  switch (selectedHostRisk.value) {
-    case "high_cpu":
-      parts.push("高 CPU");
-      break;
-    case "high_memory":
-      parts.push("高内存");
-      break;
-  }
-
-  return parts;
-});
-const hasActiveHostFilters = computed(() => hostFilterSummary.value.length > 0);
-const hostViewSummary = computed(() => {
-  if (loading.value) {
-    return "主机视图加载中";
-  }
-
-  return hasActiveHostFilters.value
-    ? `当前视图匹配 ${hosts.value.length} 台主机`
-    : `当前展示 ${hosts.value.length} 台主机`;
-});
 
 const connectionLabel = computed(() => {
   switch (connectionState.value) {
@@ -126,7 +28,7 @@ const connectionLabel = computed(() => {
 });
 
 watch(
-  () => alerts.value.length,
+  () => monitor.alerts.length,
   (newLen, oldLen) => {
     if (newLen > oldLen) {
       document.title =
@@ -136,261 +38,6 @@ watch(
     }
   },
 );
-
-function severityClass(severity: string | undefined): string {
-  switch (severity ?? "info") {
-    case "critical":
-      return "severity-critical";
-    case "warning":
-      return "severity-warning";
-    default:
-      return "severity-info";
-  }
-}
-
-function severityLabel(severity: string | undefined): string {
-  switch (severity ?? "info") {
-    case "critical":
-      return "严重";
-    case "warning":
-      return "警告";
-    default:
-      return "提示";
-  }
-}
-
-function isHighCPU(host: Host): boolean {
-  return host.cpu >= 80;
-}
-
-function isHighMemory(host: Host): boolean {
-  return host.memory >= 85;
-}
-
-function hostRiskVariant(host: Host): "normal" | "cpu" | "memory" | "both" {
-  const highCPU = isHighCPU(host);
-  const highMemory = isHighMemory(host);
-
-  if (highCPU && highMemory) {
-    return "both";
-  }
-  if (highCPU) {
-    return "cpu";
-  }
-  if (highMemory) {
-    return "memory";
-  }
-
-  return "normal";
-}
-
-function matchesHostQuery(host: Host, query: string): boolean {
-  if (!query) {
-    return true;
-  }
-
-  return host.instance.toLowerCase().includes(query);
-}
-
-function isHostUp(status: string): boolean {
-  return status === "up";
-}
-
-function matchesHostRisk(host: Host): boolean {
-  switch (selectedHostRisk.value) {
-    case "high_cpu":
-      return host.cpu >= 80;
-    case "high_memory":
-      return host.memory >= 85;
-    default:
-      return true;
-  }
-}
-
-function sortHosts(hostList: Host[]): Host[] {
-  const sorted = [...hostList];
-
-  switch (selectedHostSort.value) {
-    case "cpu_desc":
-      sorted.sort((a, b) => {
-        if (b.cpu === a.cpu) {
-          return a.instance.localeCompare(b.instance);
-        }
-        return b.cpu - a.cpu;
-      });
-      break;
-    case "memory_desc":
-      sorted.sort((a, b) => {
-        if (b.memory === a.memory) {
-          return a.instance.localeCompare(b.instance);
-        }
-        return b.memory - a.memory;
-      });
-      break;
-    default:
-      sorted.sort((a, b) => a.instance.localeCompare(b.instance));
-  }
-
-  return sorted;
-}
-
-function setSeverityFilter(value: "all" | "critical" | "warning" | "info") {
-  selectedSeverity.value = value;
-  loadAlerts();
-}
-
-function setHostStatusFilter(value: "all" | "up" | "down") {
-  selectedHostStatus.value = value;
-  loadHosts();
-}
-
-function setHostSort(value: "instance" | "cpu_desc" | "memory_desc") {
-  selectedHostSort.value = value;
-  loadHosts();
-}
-
-function setHostRisk(value: "all" | "high_cpu" | "high_memory") {
-  selectedHostRisk.value = value;
-  loadHosts();
-}
-
-function applyHostSearch() {
-  appliedHostQuery.value = hostSearchInput.value.trim().toLowerCase();
-  loadHosts();
-}
-
-function resetHostFilters() {
-  hostSearchInput.value = "";
-  appliedHostQuery.value = "";
-  selectedHostStatus.value = "all";
-  selectedHostSort.value = "instance";
-  selectedHostRisk.value = "all";
-  loadHosts();
-}
-
-function setEventStatusFilter(value: "all" | "firing" | "resolved") {
-  selectedEventStatus.value = value;
-  loadAlertEvents();
-}
-
-function setEventSeverityFilter(
-  value: "all" | "critical" | "warning" | "info",
-) {
-  selectedEventSeverity.value = value;
-  loadAlertEvents();
-}
-
-async function loadAlerts() {
-  try {
-    alertsError.value = "";
-    const data = await fetchActiveAlerts({
-      severity: selectedSeverity.value,
-    });
-    alerts.value = data;
-  } catch (err) {
-    alertsError.value = err instanceof Error ? err.message : "加载告警失败";
-  }
-}
-
-async function loadAlertEvents() {
-  try {
-    alertEventsError.value = "";
-    const data = await fetchAlertEvents({
-      limit: alertEventsLimit,
-      status: selectedEventStatus.value,
-      severity: selectedEventSeverity.value,
-    });
-    alertEvents.value = data;
-  } catch (err) {
-    alertEventsError.value = err instanceof Error ? err.message : "加载事件失败";
-  }
-}
-
-async function loadHosts() {
-  try {
-    const data = await fetchHosts({
-      status: selectedHostStatus.value,
-      q: appliedHostQuery.value,
-      sort: selectedHostSort.value,
-      risk: selectedHostRisk.value,
-    });
-    hosts.value = sortHosts(data);
-  } catch (err) {
-    console.error("loadHosts failed:", err);
-  }
-}
-
-async function refreshAll() {
-  refreshing.value = true;
-  try {
-    await Promise.all([loadAlerts(), loadAlertEvents(), loadHosts()]);
-    lastUpdateTime.value = Date.now();
-  } finally {
-    loading.value = false;
-    refreshing.value = false;
-  }
-}
-
-function pushAlertEvent(event: AlertEvent) {
-  alertEvents.value.unshift(event);
-  if (alertEvents.value.length > 200) {
-    alertEvents.value.length = 200;
-  }
-}
-
-function applyIncomingAlert(event: AlertEvent) {
-  pushAlertEvent(event);
-
-  const alert: AlertRecord = {
-    status: event.status,
-    fingerprint: event.fingerprint,
-    labels: event.labels,
-    annotations: event.annotations,
-    startsAt: event.startsAt,
-    endsAt: event.endsAt,
-    generatorURL: event.generatorURL,
-  };
-
-  const idx = alerts.value.findIndex(
-    (a) => a.fingerprint === alert.fingerprint,
-  );
-  if (alert.status === "resolved") {
-    if (idx !== -1) alerts.value.splice(idx, 1);
-    return;
-  }
-  if (idx !== -1) {
-    alerts.value[idx] = alert;
-  } else {
-    alerts.value.unshift(alert);
-    const sev = alert.labels.severity ?? "info";
-    const sevLabel = severityLabel(sev);
-    const name = alert.labels.alertname || "未知告警";
-    showToast(`新${sevLabel}告警: ${name}`, sev);
-  }
-}
-
-function applyIncomingHosts(newHosts: Host[]) {
-  hosts.value = sortHosts(newHosts.filter((host) => {
-    const statusMatched =
-      selectedHostStatus.value === "all" ||
-      isHostUp(host.status) === (selectedHostStatus.value === "up");
-
-    return statusMatched && matchesHostQuery(host, appliedHostQuery.value) && matchesHostRisk(host);
-  }));
-  lastUpdateTime.value = Date.now();
-}
-
-function showToast(message: string, severity: string) {
-  const id = ++toastId;
-  toasts.value.push({ id, message, severity });
-  if (toasts.value.length > 10) {
-    toasts.value.splice(0, toasts.value.length - 10);
-  }
-  const timerId = window.setTimeout(() => {
-    toasts.value = toasts.value.filter((t) => t.id !== id);
-  }, 4000);
-  toastTimers.push(timerId);
-}
 
 function updateBeijingTime() {
   beijingTime.value = new Date().toLocaleString("zh-CN", {
@@ -403,19 +50,6 @@ function updateBeijingTime() {
     second: "2-digit",
     hour12: false,
   });
-}
-
-function updateAgoText() {
-  const diff = Math.floor((Date.now() - lastUpdateTime.value) / 1000);
-  if (diff < 5) {
-    updateAgo.value = "刚刚更新";
-  } else if (diff < 60) {
-    updateAgo.value = `${diff}秒前更新`;
-  } else if (diff < 3600) {
-    updateAgo.value = `${Math.floor(diff / 60)}分钟前更新`;
-  } else {
-    updateAgo.value = `${Math.floor(diff / 3600)}小时前更新`;
-  }
 }
 
 function toggleFullscreen() {
@@ -442,7 +76,7 @@ function onKeydown(e: KeyboardEvent) {
   }
   if (e.key === "r" || e.key === "R") {
     e.preventDefault();
-    refreshAll();
+    monitor.refreshAll();
   } else if (e.key === "f" || e.key === "F") {
     e.preventDefault();
     toggleFullscreen();
@@ -450,12 +84,12 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  refreshAll();
+  monitor.refreshAll();
   connect();
   updateBeijingTime();
-  updateAgoText();
+  monitor.updateAgoText();
   beijingTimer.value = window.setInterval(updateBeijingTime, 1000);
-  updateAgoTimer.value = window.setInterval(updateAgoText, 5000);
+  updateAgoTimer.value = window.setInterval(monitor.updateAgoText, 5000);
   window.addEventListener("keydown", onKeydown);
   document.addEventListener("fullscreenchange", onFullscreenChange);
 });
@@ -464,8 +98,7 @@ onBeforeUnmount(() => {
   disconnect();
   if (beijingTimer.value !== null) clearInterval(beijingTimer.value);
   if (updateAgoTimer.value !== null) clearInterval(updateAgoTimer.value);
-  toastTimers.forEach((id) => clearTimeout(id));
-  toastTimers.length = 0;
+  monitor.clearToastTimers();
   window.removeEventListener("keydown", onKeydown);
   document.removeEventListener("fullscreenchange", onFullscreenChange);
 });
@@ -477,12 +110,14 @@ onBeforeUnmount(() => {
     <div class="toast-container">
       <transition-group name="toast">
         <div
-          v-for="toast in toasts"
+          v-for="toast in monitor.toasts"
           :key="toast.id"
           class="toast"
-          :class="severityClass(toast.severity)"
+          :class="monitor.severityClass(toast.severity)"
         >
-          <span class="toast-severity">{{ severityLabel(toast.severity) }}</span>
+          <span class="toast-severity">
+            {{ monitor.severityLabel(toast.severity) }}
+          </span>
           <span class="toast-message">{{ toast.message }}</span>
         </div>
       </transition-group>
@@ -500,7 +135,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="header-right">
-        <div class="update-ago">{{ updateAgo }}</div>
+        <div class="update-ago">{{ monitor.updateAgo }}</div>
         <div class="clock">
           <svg
             width="16"
@@ -558,58 +193,7 @@ onBeforeUnmount(() => {
       </RouterLink>
     </nav>
 
-    <RouterView v-slot="{ Component, route }">
-      <component
-        :is="Component"
-        v-if="route.name === 'overview'"
-        :hosts="hosts"
-        :host-count-label="hostCountLabel"
-        :high-cpu-host-count="highCPUHostCount"
-        :high-memory-host-count="highMemoryHostCount"
-        :both-risk-host-count="bothRiskHostCount"
-        :active-alert-count="alerts.length"
-        :alert-event-count="alertEvents.length"
-        :critical-count="criticalCount"
-        :warning-count="warningCount"
-        :info-count="infoCount"
-      />
-      <component
-        :is="Component"
-        v-else-if="route.name === 'hosts'"
-        :hosts="hosts"
-        :loading="loading"
-        :host-search-input="hostSearchInput"
-        :applied-host-query="appliedHostQuery"
-        :selected-host-status="selectedHostStatus"
-        :selected-host-sort="selectedHostSort"
-        :selected-host-risk="selectedHostRisk"
-        :host-view-summary="hostViewSummary"
-        :host-filter-summary="hostFilterSummary"
-        :has-active-host-filters="hasActiveHostFilters"
-        @update:host-search-input="hostSearchInput = $event"
-        @apply-search="applyHostSearch"
-        @status-change="setHostStatusFilter"
-        @sort-change="setHostSort"
-        @risk-change="setHostRisk"
-        @reset-filters="resetHostFilters"
-      />
-      <component
-        :is="Component"
-        v-else
-        :alerts="alerts"
-        :events="latestAlertEvents"
-        :selected-severity="selectedSeverity"
-        :refreshing="refreshing"
-        :alerts-error="alertsError"
-        :selected-event-status="selectedEventStatus"
-        :selected-event-severity="selectedEventSeverity"
-        :alert-events-error="alertEventsError"
-        @severity-change="setSeverityFilter"
-        @refresh="refreshAll"
-        @event-status-change="setEventStatusFilter"
-        @event-severity-change="setEventSeverityFilter"
-      />
-    </RouterView>
+    <RouterView />
   </div>
 </template>
 
