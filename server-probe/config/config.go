@@ -11,6 +11,8 @@ type Config struct {
 	MetricsPath    string
 	ScrapeInterval time.Duration
 	Hostname       string
+	HostProc       string
+	HostSys        string
 }
 
 func Load() Config {
@@ -19,6 +21,8 @@ func Load() Config {
 		MetricsPath:    getEnv("METRICS_PATH", "/metrics"),
 		ScrapeInterval: time.Duration(getEnvInt("SCRAPE_INTERVAL", 5)) * time.Second,
 		Hostname:       getEnv("HOSTNAME", getHostname()),
+		HostProc:       getEnv("HOST_PROC", ""),
+		HostSys:        getEnv("HOST_SYS", ""),
 	}
 }
 

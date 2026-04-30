@@ -1,0 +1,103 @@
+package collector
+
+import (
+	"errors"
+	"log/slog"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/shirou/gopsutil/v3/disk"
+)
+
+type DiskCollector struct {
+	hostname       string
+	usage          *prometheus.GaugeVec
+	total          *prometheus.GaugeVec
+	free           *prometheus.GaugeVec
+	readBytes      *prometheus.CounterVec
+	writeBytes     *prometheus.CounterVec
+	lastReadBytes  map[string]uint64
+	lastWriteBytes map[string]uint64
+}
+
+func NewDiskCollector(hostname string) *DiskCollector {
+	return &DiskCollector{
+		hostname: hostname,
+		usage: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "server_monitor_disk_usage_percent",
+			Help: "Disk usage percentage by mountpoint.",
+		}, []string{"instance", "mountpoint"}),
+		total: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "server_monitor_disk_total_bytes",
+			Help: "Disk total bytes by mountpoint.",
+		}, []string{"instance", "mountpoint"}),
+		free: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "server_monitor_disk_free_bytes",
+			Help: "Disk free bytes by mountpoint.",
+		}, []string{"instance", "mountpoint"}),
+		readBytes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "server_monitor_disk_read_bytes_total",
+			Help: "Disk read bytes observed by the probe.",
+		}, []string{"instance", "device"}),
+		writeBytes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "server_monitor_disk_write_bytes_total",
+			Help: "Disk write bytes observed by the probe.",
+		}, []string{"instance", "device"}),
+		lastReadBytes:  make(map[string]uint64),
+		lastWriteBytes: make(map[string]uint64),
+	}
+}
+
+func (c *DiskCollector) Name() string {
+	return "disk"
+}
+
+func (c *DiskCollector) Register(registry *prometheus.Registry) {
+	registry.MustRegister(c.usage, c.total, c.free, c.readBytes, c.writeBytes)
+}
+
+func (c *DiskCollector) Update() error {
+	var errs []error
+
+	partitions, err := disk.Partitions(false)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, partition := range partitions {
+			usage, err := disk.Usage(partition.Mountpoint)
+			if err != nil {
+				slog.Warn("disk usage collect failed", "mountpoint", partition.Mountpoint, "error", err)
+				errs = append(errs, err)
+				continue
+			}
+			c.usage.WithLabelValues(c.hostname, partition.Mountpoint).Set(usage.UsedPercent)
+			c.total.WithLabelValues(c.hostname, partition.Mountpoint).Set(float64(usage.Total))
+			c.free.WithLabelValues(c.hostname, partition.Mountpoint).Set(float64(usage.Free))
+		}
+	}
+
+	ioCounters, err := disk.IOCounters()
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for device, stat := range ioCounters {
+			c.addCounterDelta(c.readBytes, c.lastReadBytes, device, stat.ReadBytes)
+			c.addCounterDelta(c.writeBytes, c.lastWriteBytes, device, stat.WriteBytes)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (c *DiskCollector) addCounterDelta(counter *prometheus.CounterVec, previous map[string]uint64, label string, current uint64) {
+	last, ok := previous[label]
+	previous[label] = current
+	if !ok {
+		counter.WithLabelValues(c.hostname, label).Add(float64(current))
+		return
+	}
+	if current < last {
+		slog.Warn("disk counter reset detected", "device", label, "previous", last, "current", current)
+		return
+	}
+	counter.WithLabelValues(c.hostname, label).Add(float64(current - last))
+}

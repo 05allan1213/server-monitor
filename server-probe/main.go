@@ -18,11 +18,20 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := applyHostPaths(cfg); err != nil {
+		slog.Error("apply host paths failed", "error", err)
+		os.Exit(1)
+	}
+
 	registry := prometheus.NewRegistry()
 
 	collectors := []collector.Collector{
 		collector.NewCPUCollector(cfg.Hostname),
 		collector.NewMemoryCollector(cfg.Hostname),
+		collector.NewDiskCollector(cfg.Hostname),
+		collector.NewNetworkCollector(cfg.Hostname),
+		collector.NewLoadCollector(cfg.Hostname),
+		collector.NewProcessCollector(cfg.Hostname),
 	}
 
 	for _, c := range collectors {
@@ -93,4 +102,18 @@ func updateCollectors(collectors []collector.Collector) {
 			slog.Error("collector update failed", "collector", c.Name(), "error", err)
 		}
 	}
+}
+
+func applyHostPaths(cfg config.Config) error {
+	if cfg.HostProc != "" {
+		if err := os.Setenv("HOST_PROC", cfg.HostProc); err != nil {
+			return err
+		}
+	}
+	if cfg.HostSys != "" {
+		if err := os.Setenv("HOST_SYS", cfg.HostSys); err != nil {
+			return err
+		}
+	}
+	return nil
 }

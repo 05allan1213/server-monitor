@@ -10,7 +10,7 @@
 server-probe → Prometheus → AlertManager → server-web webhook → Redis Pub/Sub → WebSocket → 前端大屏
 ```
 
-**当前第一阶段能力：**
+**当前能力：**
 
 - 主机指标查询、实时广播与主机区筛选面板
 - 活跃告警查询
@@ -287,21 +287,3 @@ server-monitor/
 - Redis 7（缓存 + Pub/Sub）
 - Prometheus + AlertManager
 - Docker / Kubernetes
-
-## 第一阶段状态
-
-当前第一阶段已经完成最小可用闭环：
-
-- `server-probe` 不再依赖 MySQL，改为纯 Prometheus exporter
-- Prometheus、AlertManager、Redis 和 `server-web` 已串联
-- 前端页面可同时展示主机指标、活跃告警和最近事件
-- 主机区已支持状态筛选、关键词搜索、排序、风险过滤、风险高亮和视图重置
-- WebSocket 可实时推送告警变化
-- Docker Compose 模式已完成一轮真实联调验证
-
-当前还没有纳入第一阶段闭环的主要增强项：
-
-- 前端多页面与主机详情
-- 告警事件筛选 / 分页
-- Helm 收口与更系统化的 K8s 部署整理
-- 更完整的限流、观测和连接增强
