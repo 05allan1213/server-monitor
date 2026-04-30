@@ -3,7 +3,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 
 import { fetchActiveAlerts, fetchAlertEvents } from "./api/alerts";
 import { fetchHosts } from "./api/hosts";
-import HostCard from "./components/HostCard.vue";
+import HostsPanel from "./components/HostsPanel.vue";
 import HostResourceChart from "./components/HostResourceChart.vue";
 import StatsRow from "./components/StatsRow.vue";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
@@ -602,213 +602,24 @@ onBeforeUnmount(() => {
       <HostResourceChart :hosts="hosts" />
     </section>
 
-    <!-- Hosts Section -->
-    <section class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            style="color: var(--accent)"
-          >
-            <rect x="2" y="2" width="20" height="8" rx="2" />
-            <rect x="2" y="14" width="20" height="8" rx="2" />
-          </svg>
-          <h2>主机指标</h2>
-        </div>
-        <div class="panel-actions panel-actions-wrap">
-          <form class="search-form" @submit.prevent="applyHostSearch">
-            <input
-              v-model="hostSearchInput"
-              type="text"
-              class="search-input"
-              placeholder="搜索主机名"
-            />
-            <button type="submit" class="search-btn">
-              搜索
-            </button>
-          </form>
-          <div class="filter-group">
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostStatus === 'all' }"
-              @click="setHostStatusFilter('all')"
-            >
-              全部
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostStatus === 'up' }"
-              @click="setHostStatusFilter('up')"
-            >
-              在线
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostStatus === 'down' }"
-              @click="setHostStatusFilter('down')"
-            >
-              离线
-            </button>
-          </div>
-          <div class="filter-group">
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostSort === 'instance' }"
-              @click="setHostSort('instance')"
-            >
-              名称
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostSort === 'cpu_desc' }"
-              @click="setHostSort('cpu_desc')"
-            >
-              CPU
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostSort === 'memory_desc' }"
-              @click="setHostSort('memory_desc')"
-            >
-              内存
-            </button>
-          </div>
-          <div class="filter-group">
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostRisk === 'all' }"
-              @click="setHostRisk('all')"
-            >
-              全风险
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostRisk === 'high_cpu' }"
-              @click="setHostRisk('high_cpu')"
-            >
-              高 CPU
-            </button>
-            <button
-              type="button"
-              class="filter-btn"
-              :class="{ active: selectedHostRisk === 'high_memory' }"
-              @click="setHostRisk('high_memory')"
-            >
-              高内存
-            </button>
-          </div>
-          <button
-            v-if="hasActiveHostFilters"
-            type="button"
-            class="reset-btn"
-            @click="resetHostFilters"
-          >
-            重置
-          </button>
-          <span class="panel-badge">WebSocket 实时推送</span>
-        </div>
-      </div>
-
-      <div class="host-summary">
-        <span class="host-summary-label">当前条件</span>
-        <span class="host-summary-chip host-summary-chip-strong">
-          {{ hostViewSummary }}
-        </span>
-        <span
-          v-if="!hasActiveHostFilters"
-          class="host-summary-chip"
-        >
-          默认视图
-        </span>
-        <span
-          v-for="item in hostFilterSummary"
-          :key="item"
-          class="host-summary-chip"
-        >
-          {{ item }}
-        </span>
-      </div>
-
-      <!-- Skeleton Loading -->
-      <div v-if="loading" class="hosts-grid">
-        <div v-for="n in 3" :key="n" class="host-card skeleton">
-          <div class="skeleton-header">
-            <div class="skeleton-dot"></div>
-            <div class="skeleton-line" style="width: 60%"></div>
-          </div>
-          <div class="skeleton-metric">
-            <div class="skeleton-label"></div>
-            <div class="skeleton-bar"></div>
-            <div class="skeleton-value"></div>
-          </div>
-          <div class="skeleton-metric">
-            <div class="skeleton-label"></div>
-            <div class="skeleton-bar"></div>
-            <div class="skeleton-value"></div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="hosts.length === 0" class="empty-state">
-        <div class="empty-icon">
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-          >
-            <rect x="2" y="2" width="20" height="8" rx="2" />
-            <rect x="2" y="14" width="20" height="8" rx="2" />
-          </svg>
-        </div>
-        <p>
-          {{
-            appliedHostQuery
-              ? "没有匹配的主机"
-              : selectedHostStatus === "all"
-                ? "暂无主机数据"
-                : "当前筛选条件下没有主机"
-          }}
-        </p>
-        <p class="empty-sub">
-          {{
-            appliedHostQuery
-              ? `没有匹配“${hostSearchInput.trim() || appliedHostQuery}”的主机`
-              : selectedHostRisk === "high_cpu"
-                ? "当前没有高 CPU 主机"
-                : selectedHostRisk === "high_memory"
-                  ? "当前没有高内存主机"
-              : selectedHostStatus === "all"
-                ? "Prometheus 尚未发现任何主机"
-                : selectedHostStatus === "up"
-                  ? "当前没有在线主机"
-                  : "当前没有离线主机"
-          }}
-        </p>
-      </div>
-      <div v-else class="hosts-grid">
-        <HostCard
-          v-for="host in hosts"
-          :key="host.instance"
-          :host="host"
-        />
-      </div>
-    </section>
+    <HostsPanel
+      :hosts="hosts"
+      :loading="loading"
+      :host-search-input="hostSearchInput"
+      :applied-host-query="appliedHostQuery"
+      :selected-host-status="selectedHostStatus"
+      :selected-host-sort="selectedHostSort"
+      :selected-host-risk="selectedHostRisk"
+      :host-view-summary="hostViewSummary"
+      :host-filter-summary="hostFilterSummary"
+      :has-active-host-filters="hasActiveHostFilters"
+      @update:host-search-input="hostSearchInput = $event"
+      @apply-search="applyHostSearch"
+      @status-change="setHostStatusFilter"
+      @sort-change="setHostSort"
+      @risk-change="setHostRisk"
+      @reset-filters="resetHostFilters"
+    />
 
     <!-- Alerts Section -->
     <section class="panel">
@@ -1424,156 +1235,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.reset-btn {
-  padding: 0.38rem 0.75rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.reset-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.host-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin: -0.25rem 0 1rem;
-}
-
-.host-summary-label {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.host-summary-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.22rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.host-summary-chip-strong {
-  background: var(--accent-soft);
-  border-color: rgba(59, 130, 246, 0.2);
-  color: var(--accent);
-}
-
-.search-form {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-}
-
-.search-input {
-  min-width: 11rem;
-  padding: 0.35rem 0.5rem;
-  color: var(--text-primary);
-  cursor: text;
-}
-
-.search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.search-btn {
-  padding: 0.35rem 0.75rem;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.search-btn:hover {
-  background: rgba(59, 130, 246, 0.18);
-}
-
-/* Skeleton */
-.skeleton {
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes skeleton-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.skeleton-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.skeleton-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-color);
-}
-
-.skeleton-line {
-  height: 16px;
-  background: var(--border-color);
-  border-radius: 4px;
-}
-
-.skeleton-metric {
-  display: grid;
-  grid-template-columns: 2.5rem 1fr 3.5rem;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.skeleton-label {
-  height: 12px;
-  background: var(--border-color);
-  border-radius: 3px;
-}
-
-.skeleton-bar {
-  height: 8px;
-  background: var(--border-color);
-  border-radius: 4px;
-}
-
-.skeleton-value {
-  height: 12px;
-  background: var(--border-color);
-  border-radius: 3px;
-}
-
-/* Hosts Grid */
-.hosts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
-}
-
 /* Filter */
 .filter-group {
   display: flex;
@@ -1865,19 +1526,6 @@ onBeforeUnmount(() => {
 
   .panel-actions-wrap {
     justify-content: flex-start;
-  }
-
-  .search-form {
-    width: 100%;
-  }
-
-  .search-input {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .hosts-grid {
-    grid-template-columns: 1fr;
   }
 
   .toast-container {
