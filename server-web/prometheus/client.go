@@ -40,12 +40,23 @@ type queryResult struct {
 type vectorResult struct {
 	Metric map[string]string `json:"metric"`
 	Value  []interface{}     `json:"value"`
+	Values [][]interface{}   `json:"values"`
 }
 
 type metricValue struct {
 	Instance  string
 	Value     float64
 	Timestamp time.Time
+}
+
+type RangePoint struct {
+	Timestamp time.Time `json:"timestamp"`
+	Value     float64   `json:"value"`
+}
+
+type RangeSeries struct {
+	Metric map[string]string `json:"metric"`
+	Values []RangePoint      `json:"values"`
 }
 
 func NewClient(baseURL string, timeout time.Duration) *Client {
@@ -134,6 +145,15 @@ func (c *Client) GetHosts(ctx context.Context) ([]Host, error) {
 	return hosts, nil
 }
 
+func (c *Client) QueryRange(ctx context.Context, metric, instance string, params map[string]string, start, end time.Time, step time.Duration) ([]RangeSeries, error) {
+	query, err := BuildQuery(metric, instance, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.queryRange(ctx, query, start, end, step)
+}
+
 func (c *Client) queryInstantVector(ctx context.Context, query string) ([]metricValue, error) {
 	endpoint := c.baseURL + "/api/v1/query"
 	values := url.Values{}
@@ -178,6 +198,63 @@ func (c *Client) queryInstantVector(ctx context.Context, query string) ([]metric
 	return results, nil
 }
 
+func (c *Client) queryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) ([]RangeSeries, error) {
+	if start.IsZero() || end.IsZero() {
+		return nil, fmt.Errorf("range query start and end are required")
+	}
+	if !end.After(start) {
+		return nil, fmt.Errorf("range query end must be after start")
+	}
+	if step <= 0 {
+		return nil, fmt.Errorf("range query step must be positive")
+	}
+
+	endpoint := c.baseURL + "/api/v1/query_range"
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("start", formatPrometheusTime(start))
+	values.Set("end", formatPrometheusTime(end))
+	values.Set("step", formatPrometheusStep(step))
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+values.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build prometheus range query request: %w", err)
+	}
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("range query prometheus failed: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("range query prometheus returned status %d", response.StatusCode)
+	}
+
+	var payload apiResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode prometheus range response: %w", err)
+	}
+
+	if payload.Status != "success" {
+		if payload.Error != "" {
+			return nil, fmt.Errorf("prometheus range query error: %s", payload.Error)
+		}
+		return nil, fmt.Errorf("prometheus range query failed with status %s", payload.Status)
+	}
+
+	results := make([]RangeSeries, 0, len(payload.Data.Result))
+	for _, item := range payload.Data.Result {
+		series, err := parseRangeResult(item)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, series)
+	}
+
+	return results, nil
+}
+
 func parseVectorResult(item vectorResult) (metricValue, error) {
 	instance := item.Metric["instance"]
 	if instance == "" {
@@ -205,6 +282,35 @@ func parseVectorResult(item vectorResult) (metricValue, error) {
 	}, nil
 }
 
+func parseRangeResult(item vectorResult) (RangeSeries, error) {
+	points := make([]RangePoint, 0, len(item.Values))
+	for _, rawPoint := range item.Values {
+		if len(rawPoint) != 2 {
+			return RangeSeries{}, fmt.Errorf("unexpected prometheus range value format")
+		}
+
+		timestamp, err := parseTimestamp(rawPoint[0])
+		if err != nil {
+			return RangeSeries{}, err
+		}
+
+		value, err := parseFloat(rawPoint[1])
+		if err != nil {
+			return RangeSeries{}, err
+		}
+
+		points = append(points, RangePoint{
+			Timestamp: timestamp,
+			Value:     value,
+		})
+	}
+
+	return RangeSeries{
+		Metric: item.Metric,
+		Values: points,
+	}, nil
+}
+
 func parseTimestamp(value interface{}) (time.Time, error) {
 	floatValue, err := parseFloat(value)
 	if err != nil {
@@ -228,6 +334,14 @@ func parseFloat(value interface{}) (float64, error) {
 	default:
 		return 0, fmt.Errorf("unexpected value type %T", value)
 	}
+}
+
+func formatPrometheusTime(ts time.Time) string {
+	return strconv.FormatFloat(float64(ts.UnixNano())/1e9, 'f', 3, 64)
+}
+
+func formatPrometheusStep(step time.Duration) string {
+	return strconv.FormatFloat(step.Seconds(), 'f', -1, 64)
 }
 
 func getOrCreateHost(hosts map[string]*Host, instance string) *Host {
