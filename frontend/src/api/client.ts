@@ -21,7 +21,11 @@ export async function getApiData<T>(
       throw new Error(payload.error ?? "Unknown API error");
     }
 
-    return payload.data as T;
+    if (payload.data === undefined) {
+      throw new Error("API response missing data field");
+    }
+
+    return payload.data;
   } catch (err) {
     if (axios.isAxiosError(err)) {
       throw normalizeAxiosError(err);

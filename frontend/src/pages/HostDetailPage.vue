@@ -123,7 +123,10 @@ function renderChart() {
       },
       tooltip: {
         trigger: "axis",
-        valueFormatter: (value: number) => `${roundMetric(value)}%`,
+        valueFormatter: (value: unknown) => {
+          const num = typeof value === "number" ? value : Number(value);
+          return Number.isFinite(num) ? `${roundMetric(num)}%` : "--";
+        },
       },
       xAxis: {
         type: "category",

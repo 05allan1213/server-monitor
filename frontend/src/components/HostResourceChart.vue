@@ -162,11 +162,20 @@ function cssVar(name: string, fallback: string): string {
   return value || fallback;
 }
 
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function formatTooltip(params: TooltipItem | TooltipItem[]): string {
   const items = Array.isArray(params) ? params : [params];
   const title = items[0]?.axisValueLabel ?? "";
-  const rows = items.map((item) => `${item.marker}${item.seriesName}: ${item.value}%`);
-  return [title, ...rows].join("<br />");
+  const rows = items.map((item) => {
+    const value = item.value ?? "--";
+    return `${item.marker}${item.seriesName}: ${value}%`;
+  });
+  return [escapeHtml(title), ...rows].join("<br />");
 }
 </script>
 
