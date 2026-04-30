@@ -1,18 +1,17 @@
 # ============================================
 # server-probe 部署配置
 # ============================================
-# 监控探针：采集 CPU/内存指标，暴露 Prometheus 指标
+# 监控探针：采集宿主机指标，暴露 Prometheus 指标
 # ============================================
 
 # ------------------------------------------
-# Deployment - 部署控制器
+# DaemonSet - 每个 Node 部署一个监控探针
 # ------------------------------------------
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: server-probe
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: server-probe
@@ -28,6 +27,13 @@ spec:
           ports:
             - containerPort: 9090
               name: metrics
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -65,6 +71,19 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: PROBE_SCRAPE_INTERVAL
+            - name: HOST_PROC
+              value: /host/proc
+            - name: HOST_SYS
+              value: /host/sys
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: sys
+          hostPath:
+            path: /sys
+            type: Directory
 
 ---
 # ------------------------------------------
