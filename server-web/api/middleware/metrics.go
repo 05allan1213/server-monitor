@@ -1,0 +1,56 @@
+package middleware
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+type Metrics struct {
+	registry        *prometheus.Registry
+	requestsTotal   *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
+}
+
+func NewMetrics() *Metrics {
+	metrics := &Metrics{
+		registry: prometheus.NewRegistry(),
+		requestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests handled by server-web.",
+		}, []string{"method", "path", "status"}),
+		requestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds.",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		}, []string{"method", "path", "status"}),
+	}
+
+	metrics.registry.MustRegister(metrics.requestsTotal, metrics.requestDuration)
+	return metrics
+}
+
+func (m *Metrics) Handler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		c.Next()
+
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+		status := strconv.Itoa(c.Writer.Status())
+
+		m.requestsTotal.WithLabelValues(c.Request.Method, path, status).Inc()
+		m.requestDuration.WithLabelValues(c.Request.Method, path, status).Observe(time.Since(start).Seconds())
+	}
+}
+
+func (m *Metrics) HTTPHandler() http.Handler {
+	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+}

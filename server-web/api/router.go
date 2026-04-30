@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"server-web/api/handlers"
+	"server-web/api/middleware"
 	"server-web/config"
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
@@ -17,7 +18,8 @@ import (
 
 func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, websocketHub *ws.Hub) (*gin.Engine, error) {
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
+	metrics := middleware.NewMetrics()
+	router.Use(gin.Logger(), gin.Recovery(), metrics.Handler())
 
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return nil, err
@@ -25,6 +27,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	handler := handlers.NewHandler(promClient, cacheClient, cfg.ReadyTimeout, cfg.RequestTimeout, cfg.HostsCacheTTL, websocketHub)
 
+	router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
 	router.GET("/api/v1/hosts", handler.Hosts)
