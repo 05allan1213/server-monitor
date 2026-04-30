@@ -60,8 +60,18 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(cfg.MetricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"healthy":true}`))
+		if _, err := w.Write([]byte(`{"healthy":true}`)); err != nil {
+			slog.Error("healthz response write failed", "error", err)
+		}
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"ready":true}`)); err != nil {
+			slog.Error("readyz response write failed", "error", err)
+		}
 	})
 
 	srv := &http.Server{
