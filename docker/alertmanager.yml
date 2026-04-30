@@ -19,4 +19,4 @@ inhibit_rules:
       - severity="critical"
     target_matchers:
       - severity="warning"
-    equal: ['instance']
+    equal: ['alertname', 'instance']
