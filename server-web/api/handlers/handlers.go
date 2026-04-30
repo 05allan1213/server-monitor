@@ -24,11 +24,10 @@ type cacheClient interface {
 	Ping(ctx context.Context) error
 	Get(ctx context.Context, key string) ([]byte, bool)
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
-	SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
 	HSet(ctx context.Context, key, field string, value []byte) error
 	HDel(ctx context.Context, key, field string) error
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
-	XAddMaxLen(ctx context.Context, key string, maxLen int64, value []byte) error
+	AddAlertEventOnce(ctx context.Context, streamKey, dedupeKey string, maxLen int64, value, dedupeValue []byte, ttl time.Duration) (bool, error)
 	XRevRangeN(ctx context.Context, key string, count int64) ([]string, error)
 	Publish(ctx context.Context, channel string, message []byte) error
 }
@@ -327,7 +326,9 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 
 	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
-	h.cacheDashboardOverview(cacheCtx, overview)
+	if !degraded {
+		h.cacheDashboardOverview(cacheCtx, overview)
+	}
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
@@ -361,6 +362,13 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	for _, alert := range payload.Alerts {
 		if alert.Fingerprint == "" {
 			continue
+		}
+		if !isAlertStatusSupported(alert.Status) {
+			c.JSON(http.StatusBadRequest, response{
+				Status: "error",
+				Error:  fmt.Sprintf("unsupported alert status %q", alert.Status),
+			})
+			return
 		}
 
 		message, err := json.Marshal(alert)
@@ -400,24 +408,24 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			return
 		}
 
-		firstSeen, err := h.cacheClient.SetNX(ctx, alertEventDedupeKey(alert), []byte(receivedAt.Format(time.RFC3339Nano)), h.dedupeTTL)
+		stored, err := h.cacheClient.AddAlertEventOnce(
+			ctx,
+			rediscache.AlertEventsKey,
+			alertEventDedupeKey(alert),
+			rediscache.AlertEventsMax,
+			event,
+			[]byte(receivedAt.Format(time.RFC3339Nano)),
+			h.dedupeTTL,
+		)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, response{
-				Status: "error",
-				Error:  fmt.Sprintf("check alert event dedupe failed: %v", err),
-			})
-			return
-		}
-		if !firstSeen {
-			continue
-		}
-
-		if err := h.cacheClient.XAddMaxLen(ctx, rediscache.AlertEventsKey, rediscache.AlertEventsMax, event); err != nil {
 			c.JSON(http.StatusBadGateway, response{
 				Status: "error",
 				Error:  fmt.Sprintf("store alert event failed: %v", err),
 			})
 			return
+		}
+		if !stored {
+			continue
 		}
 
 		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, event); err != nil {
@@ -640,6 +648,11 @@ func parseAlertEventsLimit(raw string) int64 {
 	}
 
 	return parsed
+}
+
+func isAlertStatusSupported(status string) bool {
+	_, ok := validAlertEventStatuses[status]
+	return ok
 }
 
 func alertEventDedupeKey(alert webhook.AlertRecord) string {

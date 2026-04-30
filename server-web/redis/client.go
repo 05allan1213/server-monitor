@@ -201,6 +201,43 @@ func (c *Client) XAddMaxLen(ctx context.Context, key string, maxLen int64, value
 	}).Err()
 }
 
+func (c *Client) AddAlertEventOnce(ctx context.Context, streamKey, dedupeKey string, maxLen int64, value, dedupeValue []byte, ttl time.Duration) (bool, error) {
+	if !c.Enabled() {
+		return false, errors.New("redis is not enabled")
+	}
+	if maxLen <= 0 {
+		return false, errors.New("max stream length must be positive")
+	}
+	if ttl <= 0 {
+		return false, errors.New("dedupe ttl must be positive")
+	}
+
+	result, err := c.client.Eval(ctx, `
+if redis.call("EXISTS", KEYS[2]) == 1 then
+	return 0
+end
+redis.call("XADD", KEYS[1], "MAXLEN", "~", ARGV[1], "*", ARGV[2], ARGV[3])
+redis.call("SET", KEYS[2], ARGV[4], "PX", ARGV[5])
+return 1
+`, []string{streamKey, dedupeKey},
+		strconv.FormatInt(maxLen, 10),
+		AlertEventPayload,
+		string(value),
+		string(dedupeValue),
+		strconv.FormatInt(ttl.Milliseconds(), 10),
+	).Result()
+	if err != nil {
+		return false, err
+	}
+
+	stored, ok := result.(int64)
+	if !ok {
+		return false, fmt.Errorf("unexpected alert event script result %T", result)
+	}
+
+	return stored == 1, nil
+}
+
 func (c *Client) XRevRangeN(ctx context.Context, key string, count int64) ([]string, error) {
 	if !c.Enabled() {
 		return nil, errors.New("redis is not enabled")
