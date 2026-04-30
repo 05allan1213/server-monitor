@@ -33,16 +33,16 @@ func Load() Config {
 	return Config{
 		ListenAddr:     getEnv("LISTEN_ADDR", ":8080"),
 		PrometheusURL:  getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
-		RequestTimeout: time.Duration(getEnvInt("REQUEST_TIMEOUT_SECONDS", 5)) * time.Second,
-		ReadyTimeout:   time.Duration(getEnvInt("READY_TIMEOUT_SECONDS", 3)) * time.Second,
-		HostsCacheTTL:  time.Duration(getEnvInt("HOSTS_CACHE_TTL_SECONDS", 30)) * time.Second,
+		RequestTimeout: time.Duration(getEnvPositiveInt("REQUEST_TIMEOUT_SECONDS", 5)) * time.Second,
+		ReadyTimeout:   time.Duration(getEnvPositiveInt("READY_TIMEOUT_SECONDS", 3)) * time.Second,
+		HostsCacheTTL:  time.Duration(getEnvPositiveInt("HOSTS_CACHE_TTL_SECONDS", 30)) * time.Second,
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
 		CORSOrigins:    getEnvList("CORS_ALLOWED_ORIGINS"),
 		RateLimit: RateLimitConfig{
 			Enabled:  getEnvBool("RATE_LIMIT_ENABLED", false),
-			Requests: int64(getEnvInt("RATE_LIMIT_REQUESTS", 120)),
-			Window:   time.Duration(getEnvInt("RATE_LIMIT_WINDOW_SECONDS", 60)) * time.Second,
+			Requests: int64(getEnvPositiveInt("RATE_LIMIT_REQUESTS", 120)),
+			Window:   time.Duration(getEnvPositiveInt("RATE_LIMIT_WINDOW_SECONDS", 60)) * time.Second,
 		},
 		RedisAddr:     getEnv("REDIS_ADDR", ""),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
@@ -66,6 +66,18 @@ func getEnvInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvPositiveInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
 		return fallback
 	}
 	return parsed
