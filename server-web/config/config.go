@@ -8,46 +8,78 @@ import (
 )
 
 type Config struct {
-	ListenAddr     string
-	PrometheusURL  string
-	RequestTimeout time.Duration
-	ReadyTimeout   time.Duration
-	HostsCacheTTL  time.Duration
-	GinMode        string
-	TrustedProxies []string
-	CORSOrigins    []string
-	RateLimit      RateLimitConfig
-	RedisAddr      string
-	RedisPassword  string
-	RedisDB        int
-	StaticDir      string
+	ListenAddr             string
+	PrometheusURL          string
+	RequestTimeout         time.Duration
+	ReadyTimeout           time.Duration
+	HTTPReadHeaderTimeout  time.Duration
+	HTTPReadTimeout        time.Duration
+	HTTPWriteTimeout       time.Duration
+	HTTPIdleTimeout        time.Duration
+	ShutdownTimeout        time.Duration
+	HostsBroadcastInterval time.Duration
+	HostsCacheTTL          time.Duration
+	DashboardOverviewTTL   time.Duration
+	AlertEventDedupeTTL    time.Duration
+	CacheWriteTimeout      time.Duration
+	GinMode                string
+	TrustedProxies         []string
+	CORSOrigins            []string
+	RateLimit              RateLimitConfig
+	RedisAddr              string
+	RedisPassword          string
+	RedisDB                int
+	RedisStartupTimeout    time.Duration
+	RedisDialTimeout       time.Duration
+	RedisReadTimeout       time.Duration
+	RedisWriteTimeout      time.Duration
+	RedisConnMaxLifetime   time.Duration
+	RedisConnMaxIdleTime   time.Duration
+	StaticDir              string
 }
 
 type RateLimitConfig struct {
-	Enabled  bool
-	Requests int64
-	Window   time.Duration
+	Enabled          bool
+	Requests         int64
+	Window           time.Duration
+	OperationTimeout time.Duration
 }
 
 func Load() Config {
 	return Config{
-		ListenAddr:     getEnv("LISTEN_ADDR", ":8080"),
-		PrometheusURL:  getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
-		RequestTimeout: time.Duration(getEnvPositiveInt("REQUEST_TIMEOUT_SECONDS", 5)) * time.Second,
-		ReadyTimeout:   time.Duration(getEnvPositiveInt("READY_TIMEOUT_SECONDS", 3)) * time.Second,
-		HostsCacheTTL:  time.Duration(getEnvPositiveInt("HOSTS_CACHE_TTL_SECONDS", 30)) * time.Second,
-		GinMode:        getEnv("GIN_MODE", "debug"),
-		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
-		CORSOrigins:    getEnvList("CORS_ALLOWED_ORIGINS"),
+		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
+		PrometheusURL:          getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
+		RequestTimeout:         getEnvDurationSeconds("REQUEST_TIMEOUT_SECONDS", 5),
+		ReadyTimeout:           getEnvDurationSeconds("READY_TIMEOUT_SECONDS", 3),
+		HTTPReadHeaderTimeout:  getEnvDurationSeconds("HTTP_READ_HEADER_TIMEOUT_SECONDS", 5),
+		HTTPReadTimeout:        getEnvDurationSeconds("HTTP_READ_TIMEOUT_SECONDS", 15),
+		HTTPWriteTimeout:       getEnvDurationSeconds("HTTP_WRITE_TIMEOUT_SECONDS", 30),
+		HTTPIdleTimeout:        getEnvDurationSeconds("HTTP_IDLE_TIMEOUT_SECONDS", 120),
+		ShutdownTimeout:        getEnvDurationSeconds("SHUTDOWN_TIMEOUT_SECONDS", 5),
+		HostsBroadcastInterval: getEnvDurationSeconds("HOSTS_BROADCAST_INTERVAL_SECONDS", 5),
+		HostsCacheTTL:          getEnvDurationSeconds("HOSTS_CACHE_TTL_SECONDS", 30),
+		DashboardOverviewTTL:   getEnvDurationSeconds("DASHBOARD_OVERVIEW_TTL_SECONDS", 10),
+		AlertEventDedupeTTL:    getEnvDurationSeconds("ALERT_EVENT_DEDUPE_TTL_SECONDS", 86400),
+		CacheWriteTimeout:      getEnvDurationSeconds("CACHE_WRITE_TIMEOUT_SECONDS", 3),
+		GinMode:                getEnv("GIN_MODE", "debug"),
+		TrustedProxies:         getEnvList("TRUSTED_PROXIES"),
+		CORSOrigins:            getEnvList("CORS_ALLOWED_ORIGINS"),
 		RateLimit: RateLimitConfig{
-			Enabled:  getEnvBool("RATE_LIMIT_ENABLED", false),
-			Requests: int64(getEnvPositiveInt("RATE_LIMIT_REQUESTS", 120)),
-			Window:   time.Duration(getEnvPositiveInt("RATE_LIMIT_WINDOW_SECONDS", 60)) * time.Second,
+			Enabled:          getEnvBool("RATE_LIMIT_ENABLED", false),
+			Requests:         int64(getEnvPositiveInt("RATE_LIMIT_REQUESTS", 120)),
+			Window:           getEnvDurationSeconds("RATE_LIMIT_WINDOW_SECONDS", 60),
+			OperationTimeout: getEnvDurationMilliseconds("RATE_LIMIT_OPERATION_TIMEOUT_MILLISECONDS", 500),
 		},
-		RedisAddr:     getEnv("REDIS_ADDR", ""),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		RedisDB:       getEnvInt("REDIS_DB", 0),
-		StaticDir:     getEnv("STATIC_DIR", ""),
+		RedisAddr:            getEnv("REDIS_ADDR", ""),
+		RedisPassword:        getEnv("REDIS_PASSWORD", ""),
+		RedisDB:              getEnvInt("REDIS_DB", 0),
+		RedisStartupTimeout:  getEnvDurationSeconds("REDIS_STARTUP_TIMEOUT_SECONDS", 5),
+		RedisDialTimeout:     getEnvDurationSeconds("REDIS_DIAL_TIMEOUT_SECONDS", 5),
+		RedisReadTimeout:     getEnvDurationSeconds("REDIS_READ_TIMEOUT_SECONDS", 3),
+		RedisWriteTimeout:    getEnvDurationSeconds("REDIS_WRITE_TIMEOUT_SECONDS", 3),
+		RedisConnMaxLifetime: getEnvDurationSeconds("REDIS_CONN_MAX_LIFETIME_SECONDS", 1800),
+		RedisConnMaxIdleTime: getEnvDurationSeconds("REDIS_CONN_MAX_IDLE_TIME_SECONDS", 300),
+		StaticDir:            getEnv("STATIC_DIR", ""),
 	}
 }
 
@@ -81,6 +113,14 @@ func getEnvPositiveInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getEnvDurationSeconds(key string, fallback int) time.Duration {
+	return time.Duration(getEnvPositiveInt(key, fallback)) * time.Second
+}
+
+func getEnvDurationMilliseconds(key string, fallback int) time.Duration {
+	return time.Duration(getEnvPositiveInt(key, fallback)) * time.Millisecond
 }
 
 func getEnvBool(key string, fallback bool) bool {

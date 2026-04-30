@@ -42,7 +42,7 @@ func RateLimit(store rateLimitStore, cfg config.RateLimitConfig) gin.HandlerFunc
 		}
 		key := rateLimitKey(c.ClientIP(), path)
 
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), cfg.OperationTimeout)
 		defer cancel()
 
 		allowed, remaining, err := store.AllowSlidingWindow(ctx, key, cfg.Requests, cfg.Window, time.Now().UTC())

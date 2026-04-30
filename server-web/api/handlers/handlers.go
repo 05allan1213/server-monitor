@@ -39,6 +39,9 @@ type Handler struct {
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
 	hostsTTL       time.Duration
+	dashboardTTL   time.Duration
+	dedupeTTL      time.Duration
+	cacheTimeout   time.Duration
 	websocketHub   *ws.Hub
 }
 
@@ -49,8 +52,6 @@ type response struct {
 }
 
 const defaultAlertEventsLimit int64 = 8
-const dashboardOverviewTTL = 10 * time.Second
-const alertEventDedupeTTL = 24 * time.Hour
 
 type hostMetricsRange struct {
 	duration time.Duration
@@ -133,13 +134,25 @@ var validHostMetricsRanges = map[string]hostMetricsRange{
 	},
 }
 
-func NewHandler(promClient *promclient.Client, cacheClient cacheClient, readyTimeout time.Duration, requestTimeout time.Duration, hostsTTL time.Duration, websocketHub *ws.Hub) *Handler {
+type Config struct {
+	ReadyTimeout   time.Duration
+	RequestTimeout time.Duration
+	HostsTTL       time.Duration
+	DashboardTTL   time.Duration
+	DedupeTTL      time.Duration
+	CacheTimeout   time.Duration
+}
+
+func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) *Handler {
 	return &Handler{
 		promClient:     promClient,
 		cacheClient:    cacheClient,
-		readyTimeout:   readyTimeout,
-		requestTimeout: requestTimeout,
-		hostsTTL:       hostsTTL,
+		readyTimeout:   cfg.ReadyTimeout,
+		requestTimeout: cfg.RequestTimeout,
+		hostsTTL:       cfg.HostsTTL,
+		dashboardTTL:   cfg.DashboardTTL,
+		dedupeTTL:      cfg.DedupeTTL,
+		cacheTimeout:   cfg.CacheTimeout,
 		websocketHub:   websocketHub,
 	}
 }
@@ -225,7 +238,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 		return
 	}
 
-	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
 	h.cacheHosts(cacheCtx, hosts)
 
@@ -312,7 +325,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 	overview.AlertDegraded = degraded
 	overview.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 
-	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
 	h.cacheDashboardOverview(cacheCtx, overview)
 
@@ -387,7 +400,7 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			return
 		}
 
-		firstSeen, err := h.cacheClient.SetNX(ctx, alertEventDedupeKey(alert), []byte(receivedAt.Format(time.RFC3339Nano)), alertEventDedupeTTL)
+		firstSeen, err := h.cacheClient.SetNX(ctx, alertEventDedupeKey(alert), []byte(receivedAt.Format(time.RFC3339Nano)), h.dedupeTTL)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, response{
 				Status: "error",
@@ -566,7 +579,7 @@ func (h *Handler) cacheDashboardOverview(ctx context.Context, overview dashboard
 		return
 	}
 
-	if err := h.cacheClient.Set(ctx, rediscache.DashboardOverviewKey, value, dashboardOverviewTTL); err != nil {
+	if err := h.cacheClient.Set(ctx, rediscache.DashboardOverviewKey, value, h.dashboardTTL); err != nil {
 		slog.Error("cache dashboard overview set failed", "error", err)
 	}
 }

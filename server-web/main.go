@@ -25,20 +25,21 @@ type wsMessage struct {
 	Data interface{} `json:"data"`
 }
 
-const (
-	httpReadHeaderTimeout = 5 * time.Second
-	httpReadTimeout       = 15 * time.Second
-	httpWriteTimeout      = 30 * time.Second
-	httpIdleTimeout       = 120 * time.Second
-	redisStartupTimeout   = 5 * time.Second
-)
-
 func main() {
 	cfg := config.Load()
 	gin.SetMode(cfg.GinMode)
 
 	prometheusClient := promclient.NewClient(cfg.PrometheusURL, cfg.RequestTimeout)
-	redisClient := rediscache.NewClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	redisClient := rediscache.NewClient(rediscache.Options{
+		Addr:            cfg.RedisAddr,
+		Password:        cfg.RedisPassword,
+		DB:              cfg.RedisDB,
+		DialTimeout:     cfg.RedisDialTimeout,
+		ReadTimeout:     cfg.RedisReadTimeout,
+		WriteTimeout:    cfg.RedisWriteTimeout,
+		ConnMaxLifetime: cfg.RedisConnMaxLifetime,
+		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
+	})
 	alertHub := pubsub.NewHub(64)
 	websocketHub := ws.NewHub()
 
@@ -49,7 +50,7 @@ func main() {
 
 	var subscriberDone <-chan struct{}
 	if redisClient.Enabled() {
-		pingCtx, pingCancel := context.WithTimeout(context.Background(), redisStartupTimeout)
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), cfg.RedisStartupTimeout)
 		if err := redisClient.Ping(pingCtx); err != nil {
 			slog.Error("redis ping failed at startup", "addr", cfg.RedisAddr, "error", err)
 		}
@@ -72,7 +73,7 @@ func main() {
 		}
 	}()
 
-	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout)
+	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout, cfg.HostsBroadcastInterval)
 
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub)
 	if err != nil {
@@ -83,10 +84,10 @@ func main() {
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           router,
-		ReadHeaderTimeout: httpReadHeaderTimeout,
-		ReadTimeout:       httpReadTimeout,
-		WriteTimeout:      httpWriteTimeout,
-		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
 	serverErr := make(chan error, 1)
@@ -111,7 +112,7 @@ func main() {
 
 	slog.Info("server-web shutting down...")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server-web shutdown error", "error", err)
@@ -135,8 +136,8 @@ func main() {
 	}
 }
 
-func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.Hub, timeout time.Duration) {
-	ticker := time.NewTicker(5 * time.Second)
+func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.Hub, timeout time.Duration, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

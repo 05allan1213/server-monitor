@@ -269,9 +269,25 @@ server-monitor/
 | `RATE_LIMIT_ENABLED`      | `false`                  | 是否启用 Redis 滑动窗口限流 |
 | `RATE_LIMIT_REQUESTS`     | `120`                    | 限流窗口内允许的请求数 |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60`                   | 限流窗口长度（秒） |
+| `RATE_LIMIT_OPERATION_TIMEOUT_MILLISECONDS` | `500` | 限流 Redis 操作超时（毫秒） |
 | `REQUEST_TIMEOUT_SECONDS` | `5`                      | 请求超时（秒）    |
 | `READY_TIMEOUT_SECONDS`   | `3`                      | 就绪检查超时（秒）  |
+| `HTTP_READ_HEADER_TIMEOUT_SECONDS` | `5`             | HTTP 请求头读取超时（秒） |
+| `HTTP_READ_TIMEOUT_SECONDS` | `15`                   | HTTP 请求读取超时（秒） |
+| `HTTP_WRITE_TIMEOUT_SECONDS` | `30`                  | HTTP 响应写入超时（秒） |
+| `HTTP_IDLE_TIMEOUT_SECONDS` | `120`                  | HTTP 空闲连接超时（秒） |
+| `SHUTDOWN_TIMEOUT_SECONDS` | `5`                    | 服务优雅关闭超时（秒） |
+| `HOSTS_BROADCAST_INTERVAL_SECONDS` | `5`             | WebSocket 主机列表广播周期（秒） |
 | `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |
+| `DASHBOARD_OVERVIEW_TTL_SECONDS` | `10`             | 总览缓存 TTL（秒） |
+| `ALERT_EVENT_DEDUPE_TTL_SECONDS` | `86400`          | 告警事件去重 TTL（秒） |
+| `CACHE_WRITE_TIMEOUT_SECONDS` | `3`                 | 缓存写入超时（秒） |
+| `REDIS_STARTUP_TIMEOUT_SECONDS` | `5`               | 启动时 Redis 检查超时（秒） |
+| `REDIS_DIAL_TIMEOUT_SECONDS` | `5`                  | Redis 建连超时（秒） |
+| `REDIS_READ_TIMEOUT_SECONDS` | `3`                  | Redis 读取超时（秒） |
+| `REDIS_WRITE_TIMEOUT_SECONDS` | `3`                 | Redis 写入超时（秒） |
+| `REDIS_CONN_MAX_LIFETIME_SECONDS` | `1800`          | Redis 连接最长生命周期（秒） |
+| `REDIS_CONN_MAX_IDLE_TIME_SECONDS` | `300`           | Redis 空闲连接最长保留时间（秒） |
 | `STATIC_DIR`              | (空)                      | 前端静态文件目录   |
 | `GIN_MODE`                | `debug`                  | Gin 模式      |
 

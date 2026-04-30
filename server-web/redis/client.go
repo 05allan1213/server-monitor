@@ -16,29 +16,32 @@ type Client struct {
 	enabled bool
 }
 
-const (
-	defaultDialTimeout     = 5 * time.Second
-	defaultReadTimeout     = 3 * time.Second
-	defaultWriteTimeout    = 3 * time.Second
-	defaultConnMaxLifetime = 30 * time.Minute
-	defaultConnMaxIdleTime = 5 * time.Minute
-)
+type Options struct {
+	Addr            string
+	Password        string
+	DB              int
+	DialTimeout     time.Duration
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+}
 
-func NewClient(addr, password string, db int) *Client {
-	if addr == "" {
+func NewClient(options Options) *Client {
+	if options.Addr == "" {
 		return &Client{}
 	}
 
 	return &Client{
 		client: redis.NewClient(&redis.Options{
-			Addr:            addr,
-			Password:        password,
-			DB:              db,
-			DialTimeout:     defaultDialTimeout,
-			ReadTimeout:     defaultReadTimeout,
-			WriteTimeout:    defaultWriteTimeout,
-			ConnMaxLifetime: defaultConnMaxLifetime,
-			ConnMaxIdleTime: defaultConnMaxIdleTime,
+			Addr:            options.Addr,
+			Password:        options.Password,
+			DB:              options.DB,
+			DialTimeout:     options.DialTimeout,
+			ReadTimeout:     options.ReadTimeout,
+			WriteTimeout:    options.WriteTimeout,
+			ConnMaxLifetime: options.ConnMaxLifetime,
+			ConnMaxIdleTime: options.ConnMaxIdleTime,
 		}),
 		enabled: true,
 	}

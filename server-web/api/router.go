@@ -34,7 +34,14 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		return nil, err
 	}
 
-	handler := handlers.NewHandler(promClient, cacheClient, cfg.ReadyTimeout, cfg.RequestTimeout, cfg.HostsCacheTTL, websocketHub)
+	handler := handlers.NewHandler(promClient, cacheClient, handlers.Config{
+		ReadyTimeout:   cfg.ReadyTimeout,
+		RequestTimeout: cfg.RequestTimeout,
+		HostsTTL:       cfg.HostsCacheTTL,
+		DashboardTTL:   cfg.DashboardOverviewTTL,
+		DedupeTTL:      cfg.AlertEventDedupeTTL,
+		CacheTimeout:   cfg.CacheWriteTimeout,
+	}, websocketHub)
 
 	router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 	router.GET("/healthz", handler.Healthz)
