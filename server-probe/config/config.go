@@ -1,8 +1,10 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,8 +19,8 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		ListenAddr:     getEnv("LISTEN_ADDR", ":9090"),
-		MetricsPath:    getEnv("METRICS_PATH", "/metrics"),
+		ListenAddr:     getEnvNonEmpty("LISTEN_ADDR", ":9090"),
+		MetricsPath:    getEnvPath("METRICS_PATH", "/metrics"),
 		ScrapeInterval: time.Duration(getEnvInt("SCRAPE_INTERVAL", 5)) * time.Second,
 		Hostname:       getEnv("HOSTNAME", getHostname()),
 		HostProc:       getEnv("HOST_PROC", ""),
@@ -27,7 +29,11 @@ func Load() Config {
 }
 
 func getHostname() string {
-	if h, _ := os.Hostname(); h != "" {
+	h, err := os.Hostname()
+	if err != nil {
+		slog.Warn("hostname lookup failed", "error", err)
+	}
+	if h != "" {
 		return h
 	}
 	return "unknown"
@@ -36,6 +42,22 @@ func getHostname() string {
 func getEnv(key, fallback string) string {
 	value, exists := os.LookupEnv(key)
 	if !exists {
+		return fallback
+	}
+	return value
+}
+
+func getEnvNonEmpty(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func getEnvPath(key, fallback string) string {
+	value := getEnvNonEmpty(key, fallback)
+	if !strings.HasPrefix(value, "/") {
 		return fallback
 	}
 	return value
