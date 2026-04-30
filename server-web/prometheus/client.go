@@ -117,17 +117,13 @@ func (c *Client) GetHosts(ctx context.Context) ([]Host, error) {
 	for _, item := range cpuValues {
 		host := getOrCreateHost(hostsByInstance, item.Instance)
 		host.CPU = item.Value
-		host.Status = "up"
-		host.LastScrape = item.Timestamp.UTC().Format(time.RFC3339)
+		updateLastScrape(host, item.Timestamp)
 	}
 
 	for _, item := range memoryValues {
 		host := getOrCreateHost(hostsByInstance, item.Instance)
 		host.Memory = item.Value
-		host.Status = "up"
-		if host.LastScrape == "" || item.Timestamp.After(parseTime(host.LastScrape)) {
-			host.LastScrape = item.Timestamp.UTC().Format(time.RFC3339)
-		}
+		updateLastScrape(host, item.Timestamp)
 	}
 
 	hosts := make([]Host, 0, len(hostsByInstance))
@@ -358,10 +354,22 @@ func getOrCreateHost(hosts map[string]*Host, instance string) *Host {
 	return host
 }
 
-func parseTime(value string) time.Time {
+func updateLastScrape(host *Host, timestamp time.Time) {
+	if host.LastScrape == "" {
+		host.LastScrape = timestamp.UTC().Format(time.RFC3339)
+		return
+	}
+
+	lastScrape, err := parseTime(host.LastScrape)
+	if err != nil || timestamp.After(lastScrape) {
+		host.LastScrape = timestamp.UTC().Format(time.RFC3339)
+	}
+}
+
+func parseTime(value string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, err
 	}
-	return parsed
+	return parsed, nil
 }

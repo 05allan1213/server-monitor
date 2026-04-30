@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -270,24 +271,17 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
-	defer cancel()
-
 	end := time.Now().UTC()
 	start := end.Add(-rangeConfig.duration)
 	queries := buildHostMetricQueries(c.Query("mountpoint"))
 
-	metrics := make(map[string][]promclient.RangeSeries, len(queries))
-	for _, query := range queries {
-		series, err := h.promClient.QueryRange(ctx, query.metric, instance, query.params, start, end, rangeConfig.step)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, response{
-				Status: "error",
-				Error:  fmt.Sprintf("query host metric %s failed: %v", query.name, err),
-			})
-			return
-		}
-		metrics[query.name] = series
+	metrics, err := h.queryHostMetrics(c.Request.Context(), queries, instance, start, end, rangeConfig.step)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  err.Error(),
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, response{
@@ -299,6 +293,47 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 			Metrics:     metrics,
 		},
 	})
+}
+
+func (h *Handler) queryHostMetrics(ctx context.Context, queries []hostMetricQuery, instance string, start, end time.Time, step time.Duration) (map[string][]promclient.RangeSeries, error) {
+	queryCtx, cancelAll := context.WithCancel(ctx)
+	defer cancelAll()
+
+	metrics := make(map[string][]promclient.RangeSeries, len(queries))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var firstErr error
+
+	for _, query := range queries {
+		query := query
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(queryCtx, h.requestTimeout)
+			defer cancel()
+
+			series, err := h.promClient.QueryRange(ctx, query.metric, instance, query.params, start, end, step)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("query host metric %s failed: %w", query.name, err)
+					cancelAll()
+				}
+				return
+			}
+			metrics[query.name] = series
+		}()
+	}
+
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return metrics, nil
 }
 
 func (h *Handler) DashboardOverview(c *gin.Context) {
@@ -843,18 +878,22 @@ func buildDashboardOverview(hosts []promclient.Host) dashboardOverview {
 
 	var totalCPU float64
 	var totalMemory float64
+	var healthyHosts int
 	for _, host := range hosts {
 		if host.Status == "up" {
 			overview.HealthyHosts++
+			healthyHosts++
+			totalCPU += host.CPU
+			totalMemory += host.Memory
 		} else {
 			overview.DownHosts++
 		}
-		totalCPU += host.CPU
-		totalMemory += host.Memory
 	}
 
-	overview.AvgCPU = totalCPU / float64(len(hosts))
-	overview.AvgMemory = totalMemory / float64(len(hosts))
+	if healthyHosts > 0 {
+		overview.AvgCPU = totalCPU / float64(healthyHosts)
+		overview.AvgMemory = totalMemory / float64(healthyHosts)
+	}
 
 	return overview
 }
