@@ -34,7 +34,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		return nil, err
 	}
 
-	handler := handlers.NewHandler(promClient, cacheClient, handlers.Config{
+	handler, err := handlers.NewHandler(promClient, cacheClient, handlers.Config{
 		ReadyTimeout:   cfg.ReadyTimeout,
 		RequestTimeout: cfg.RequestTimeout,
 		HostsTTL:       cfg.HostsCacheTTL,
@@ -42,6 +42,9 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		DedupeTTL:      cfg.AlertEventDedupeTTL,
 		CacheTimeout:   cfg.CacheWriteTimeout,
 	}, websocketHub)
+	if err != nil {
+		return nil, err
+	}
 
 	router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 	router.GET("/healthz", handler.Healthz)
@@ -61,7 +64,11 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
 		if _, err := os.Stat(staticDir); err == nil {
-			router.Use(serveStatic(staticDir))
+			staticHandler, err := serveStatic(staticDir)
+			if err != nil {
+				return nil, err
+			}
+			router.Use(staticHandler)
 		}
 	}
 
@@ -77,9 +84,12 @@ func limitRequestBody(maxBytes int64) gin.HandlerFunc {
 	}
 }
 
-func serveStatic(staticDir string) gin.HandlerFunc {
+func serveStatic(staticDir string) (gin.HandlerFunc, error) {
 	fileServer := http.FileServer(http.Dir(staticDir))
-	absStaticDir, _ := filepath.Abs(staticDir)
+	absStaticDir, err := filepath.Abs(staticDir)
+	if err != nil {
+		return nil, err
+	}
 
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -123,5 +133,5 @@ func serveStatic(staticDir string) gin.HandlerFunc {
 		}
 
 		c.Next()
-	}
+	}, nil
 }

@@ -143,7 +143,10 @@ type Config struct {
 	CacheTimeout   time.Duration
 }
 
-func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) *Handler {
+func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) (*Handler, error) {
+	if promClient == nil {
+		return nil, errors.New("prometheus client is required")
+	}
 	return &Handler{
 		promClient:     promClient,
 		cacheClient:    cacheClient,
@@ -154,7 +157,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 		dedupeTTL:      cfg.DedupeTTL,
 		cacheTimeout:   cfg.CacheTimeout,
 		websocketHub:   websocketHub,
-	}
+	}, nil
 }
 
 func (h *Handler) Healthz(c *gin.Context) {
