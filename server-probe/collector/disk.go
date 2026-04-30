@@ -97,6 +97,7 @@ func (c *DiskCollector) addCounterDelta(counter *prometheus.CounterVec, previous
 	}
 	if current < last {
 		slog.Warn("disk counter reset detected", "device", label, "previous", last, "current", current)
+		counter.WithLabelValues(c.hostname, label).Add(float64(current))
 		return
 	}
 	counter.WithLabelValues(c.hostname, label).Add(float64(current - last))
