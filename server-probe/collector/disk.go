@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -71,6 +72,9 @@ func (c *DiskCollector) Update(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
 				return errors.Join(append(errs, err)...)
 			}
+			if !shouldCollectDiskPartition(partition) {
+				continue
+			}
 			usage, err := disk.Usage(partition.Mountpoint)
 			if err != nil {
 				slog.Warn("disk usage collect failed", "mountpoint", partition.Mountpoint, "error", err)
@@ -116,4 +120,17 @@ func (c *DiskCollector) addCounterDelta(counter *prometheus.CounterVec, previous
 		return
 	}
 	counter.WithLabelValues(c.hostname, label).Add(float64(current - last))
+}
+
+func shouldCollectDiskPartition(partition disk.PartitionStat) bool {
+	if partition.Mountpoint == "/" {
+		return true
+	}
+
+	switch strings.ToLower(partition.Fstype) {
+	case "", "autofs", "binfmt_misc", "bpf", "cgroup", "cgroup2", "configfs", "debugfs", "devpts", "devtmpfs", "fusectl", "hugetlbfs", "mqueue", "nsfs", "proc", "pstore", "securityfs", "selinuxfs", "squashfs", "sysfs", "tmpfs", "tracefs":
+		return false
+	default:
+		return true
+	}
 }
