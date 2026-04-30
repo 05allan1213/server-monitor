@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { RouterLink, RouterView } from "vue-router";
 
 import { fetchActiveAlerts, fetchAlertEvents } from "./api/alerts";
 import { fetchHosts } from "./api/hosts";
-import AlertEventsPanel from "./components/AlertEventsPanel.vue";
-import AlertsPanel from "./components/AlertsPanel.vue";
-import HostsPanel from "./components/HostsPanel.vue";
-import HostResourceChart from "./components/HostResourceChart.vue";
-import StatsRow from "./components/StatsRow.vue";
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
 import type { AlertEvent, AlertRecord, Host } from "./types";
 
@@ -550,80 +546,70 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <StatsRow
-      :host-count="hosts.length"
-      :host-count-label="hostCountLabel"
-      :high-cpu-host-count="highCPUHostCount"
-      :high-memory-host-count="highMemoryHostCount"
-      :both-risk-host-count="bothRiskHostCount"
-      :active-alert-count="alerts.length"
-      :alert-event-count="alertEvents.length"
-      :critical-count="criticalCount"
-      :warning-count="warningCount"
-      :info-count="infoCount"
-    />
+    <nav class="route-tabs" aria-label="页面导航">
+      <RouterLink to="/" class="route-tab" exact-active-class="active">
+        总览
+      </RouterLink>
+      <RouterLink to="/hosts" class="route-tab" exact-active-class="active">
+        主机
+      </RouterLink>
+      <RouterLink to="/alerts" class="route-tab" exact-active-class="active">
+        告警
+      </RouterLink>
+    </nav>
 
-    <!-- Host Resource Chart -->
-    <section class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            style="color: var(--info)"
-          >
-            <path d="M3 3v18h18" />
-            <rect x="7" y="10" width="3" height="7" rx="1" />
-            <rect x="12" y="6" width="3" height="11" rx="1" />
-            <rect x="17" y="13" width="3" height="4" rx="1" />
-          </svg>
-          <h2>资源分布</h2>
-        </div>
-        <span class="panel-badge">ECharts</span>
-      </div>
-      <HostResourceChart :hosts="hosts" />
-    </section>
-
-    <HostsPanel
-      :hosts="hosts"
-      :loading="loading"
-      :host-search-input="hostSearchInput"
-      :applied-host-query="appliedHostQuery"
-      :selected-host-status="selectedHostStatus"
-      :selected-host-sort="selectedHostSort"
-      :selected-host-risk="selectedHostRisk"
-      :host-view-summary="hostViewSummary"
-      :host-filter-summary="hostFilterSummary"
-      :has-active-host-filters="hasActiveHostFilters"
-      @update:host-search-input="hostSearchInput = $event"
-      @apply-search="applyHostSearch"
-      @status-change="setHostStatusFilter"
-      @sort-change="setHostSort"
-      @risk-change="setHostRisk"
-      @reset-filters="resetHostFilters"
-    />
-
-    <AlertsPanel
-      :alerts="alerts"
-      :selected-severity="selectedSeverity"
-      :refreshing="refreshing"
-      :error="alertsError"
-      @severity-change="setSeverityFilter"
-      @refresh="refreshAll"
-    />
-
-    <AlertEventsPanel
-      :events="latestAlertEvents"
-      :selected-status="selectedEventStatus"
-      :selected-severity="selectedEventSeverity"
-      :error="alertEventsError"
-      @status-change="setEventStatusFilter"
-      @severity-change="setEventSeverityFilter"
-    />
+    <RouterView v-slot="{ Component, route }">
+      <component
+        :is="Component"
+        v-if="route.name === 'overview'"
+        :hosts="hosts"
+        :host-count-label="hostCountLabel"
+        :high-cpu-host-count="highCPUHostCount"
+        :high-memory-host-count="highMemoryHostCount"
+        :both-risk-host-count="bothRiskHostCount"
+        :active-alert-count="alerts.length"
+        :alert-event-count="alertEvents.length"
+        :critical-count="criticalCount"
+        :warning-count="warningCount"
+        :info-count="infoCount"
+      />
+      <component
+        :is="Component"
+        v-else-if="route.name === 'hosts'"
+        :hosts="hosts"
+        :loading="loading"
+        :host-search-input="hostSearchInput"
+        :applied-host-query="appliedHostQuery"
+        :selected-host-status="selectedHostStatus"
+        :selected-host-sort="selectedHostSort"
+        :selected-host-risk="selectedHostRisk"
+        :host-view-summary="hostViewSummary"
+        :host-filter-summary="hostFilterSummary"
+        :has-active-host-filters="hasActiveHostFilters"
+        @update:host-search-input="hostSearchInput = $event"
+        @apply-search="applyHostSearch"
+        @status-change="setHostStatusFilter"
+        @sort-change="setHostSort"
+        @risk-change="setHostRisk"
+        @reset-filters="resetHostFilters"
+      />
+      <component
+        :is="Component"
+        v-else
+        :alerts="alerts"
+        :events="latestAlertEvents"
+        :selected-severity="selectedSeverity"
+        :refreshing="refreshing"
+        :alerts-error="alertsError"
+        :selected-event-status="selectedEventStatus"
+        :selected-event-severity="selectedEventSeverity"
+        :alert-events-error="alertEventsError"
+        @severity-change="setSeverityFilter"
+        @refresh="refreshAll"
+        @event-status-change="setEventStatusFilter"
+        @event-severity-change="setEventSeverityFilter"
+      />
+    </RouterView>
   </div>
 </template>
 
@@ -860,6 +846,32 @@ onBeforeUnmount(() => {
   background: var(--danger);
 }
 
+.route-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.route-tab {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.route-tab:hover {
+  color: var(--text-secondary);
+}
+
+.route-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -868,47 +880,6 @@ onBeforeUnmount(() => {
   50% {
     opacity: 0.4;
   }
-}
-
-/* Panel */
-.panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 1.5rem;
-  backdrop-filter: blur(8px);
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.25rem;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.panel-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.panel-title h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.panel-badge {
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--accent);
-  background: var(--accent-soft);
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 /* Responsive */
@@ -926,11 +897,6 @@ onBeforeUnmount(() => {
   .header-right {
     flex-wrap: wrap;
     width: 100%;
-  }
-
-  .panel-header {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .toast-container {
