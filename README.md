@@ -266,6 +266,9 @@ server-monitor/
 | `REDIS_PASSWORD`          | (空)                      | Redis 密码    |
 | `REDIS_DB`                | `0`                      | Redis 数据库   |
 | `CORS_ALLOWED_ORIGINS`    | (空)                      | 允许跨域来源，多个用逗号分隔 |
+| `RATE_LIMIT_ENABLED`      | `false`                  | 是否启用 Redis 滑动窗口限流 |
+| `RATE_LIMIT_REQUESTS`     | `120`                    | 限流窗口内允许的请求数 |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60`                   | 限流窗口长度（秒） |
 | `REQUEST_TIMEOUT_SECONDS` | `5`                      | 请求超时（秒）    |
 | `READY_TIMEOUT_SECONDS`   | `3`                      | 就绪检查超时（秒）  |
 | `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |

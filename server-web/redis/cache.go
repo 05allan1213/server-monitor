@@ -9,4 +9,5 @@ const (
 	AlertEventPayload    = "payload"
 	AlertChannel         = "alert:channel"
 	AlertEventsMax       = 200
+	RateLimitKeyPrefix   = "ratelimit"
 )

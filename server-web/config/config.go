@@ -16,10 +16,17 @@ type Config struct {
 	GinMode        string
 	TrustedProxies []string
 	CORSOrigins    []string
+	RateLimit      RateLimitConfig
 	RedisAddr      string
 	RedisPassword  string
 	RedisDB        int
 	StaticDir      string
+}
+
+type RateLimitConfig struct {
+	Enabled  bool
+	Requests int64
+	Window   time.Duration
 }
 
 func Load() Config {
@@ -32,10 +39,15 @@ func Load() Config {
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
 		CORSOrigins:    getEnvList("CORS_ALLOWED_ORIGINS"),
-		RedisAddr:      getEnv("REDIS_ADDR", ""),
-		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
-		RedisDB:        getEnvInt("REDIS_DB", 0),
-		StaticDir:      getEnv("STATIC_DIR", ""),
+		RateLimit: RateLimitConfig{
+			Enabled:  getEnvBool("RATE_LIMIT_ENABLED", false),
+			Requests: int64(getEnvInt("RATE_LIMIT_REQUESTS", 120)),
+			Window:   time.Duration(getEnvInt("RATE_LIMIT_WINDOW_SECONDS", 60)) * time.Second,
+		},
+		RedisAddr:     getEnv("REDIS_ADDR", ""),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getEnvInt("REDIS_DB", 0),
+		StaticDir:     getEnv("STATIC_DIR", ""),
 	}
 }
 
@@ -54,6 +66,18 @@ func getEnvInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
 		return fallback
 	}
 	return parsed

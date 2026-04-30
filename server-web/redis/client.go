@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -120,6 +121,42 @@ func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]s
 	}
 
 	return c.client.LRange(ctx, key, start, stop).Result()
+}
+
+func (c *Client) AllowSlidingWindow(ctx context.Context, key string, limit int64, window time.Duration, now time.Time) (bool, int64, error) {
+	if !c.Enabled() {
+		return false, 0, errors.New("redis is not enabled")
+	}
+	if limit <= 0 {
+		return false, 0, errors.New("rate limit must be positive")
+	}
+	if window <= 0 {
+		return false, 0, errors.New("rate limit window must be positive")
+	}
+
+	nowUnixNano := now.UnixNano()
+	windowStart := now.Add(-window).UnixNano()
+
+	pipe := c.client.TxPipeline()
+	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart, 10))
+	pipe.ZAdd(ctx, key, redis.Z{
+		Score:  float64(nowUnixNano),
+		Member: strconv.FormatInt(nowUnixNano, 10),
+	})
+	count := pipe.ZCard(ctx, key)
+	pipe.Expire(ctx, key, window)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return false, 0, err
+	}
+
+	used := count.Val()
+	remaining := limit - used
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return used <= limit, remaining, nil
 }
 
 func (c *Client) XAddMaxLen(ctx context.Context, key string, maxLen int64, value []byte) error {
