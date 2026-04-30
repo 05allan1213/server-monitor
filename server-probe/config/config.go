@@ -9,22 +9,34 @@ import (
 )
 
 type Config struct {
-	ListenAddr     string
-	MetricsPath    string
-	ScrapeInterval time.Duration
-	Hostname       string
-	HostProc       string
-	HostSys        string
+	ListenAddr                  string
+	MetricsPath                 string
+	ScrapeInterval              time.Duration
+	PromHTTPMaxRequestsInFlight int
+	PromHTTPTimeout             time.Duration
+	HTTPReadTimeout             time.Duration
+	HTTPWriteTimeout            time.Duration
+	HTTPIdleTimeout             time.Duration
+	ShutdownTimeout             time.Duration
+	Hostname                    string
+	HostProc                    string
+	HostSys                     string
 }
 
 func Load() Config {
 	return Config{
-		ListenAddr:     getEnvNonEmpty("LISTEN_ADDR", ":9090"),
-		MetricsPath:    getEnvPath("METRICS_PATH", "/metrics"),
-		ScrapeInterval: time.Duration(getEnvInt("SCRAPE_INTERVAL", 5)) * time.Second,
-		Hostname:       getEnv("HOSTNAME", getHostname()),
-		HostProc:       getEnv("HOST_PROC", ""),
-		HostSys:        getEnv("HOST_SYS", ""),
+		ListenAddr:                  getEnvNonEmpty("LISTEN_ADDR", ":9090"),
+		MetricsPath:                 getEnvPath("METRICS_PATH", "/metrics"),
+		ScrapeInterval:              getEnvDurationSeconds("SCRAPE_INTERVAL", 5),
+		PromHTTPMaxRequestsInFlight: getEnvInt("PROMHTTP_MAX_REQUESTS_IN_FLIGHT", 5),
+		PromHTTPTimeout:             getEnvDurationSeconds("PROMHTTP_TIMEOUT", 5),
+		HTTPReadTimeout:             getEnvDurationSeconds("HTTP_READ_TIMEOUT", 10),
+		HTTPWriteTimeout:            getEnvDurationSeconds("HTTP_WRITE_TIMEOUT", 10),
+		HTTPIdleTimeout:             getEnvDurationSeconds("HTTP_IDLE_TIMEOUT", 60),
+		ShutdownTimeout:             getEnvDurationSeconds("SHUTDOWN_TIMEOUT", 5),
+		Hostname:                    getEnv("HOSTNAME", getHostname()),
+		HostProc:                    getEnv("HOST_PROC", ""),
+		HostSys:                     getEnv("HOST_SYS", ""),
 	}
 }
 
@@ -73,4 +85,8 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getEnvDurationSeconds(key string, fallback int) time.Duration {
+	return time.Duration(getEnvInt(key, fallback)) * time.Second
 }

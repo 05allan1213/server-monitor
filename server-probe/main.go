@@ -61,8 +61,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle(cfg.MetricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-		MaxRequestsInFlight: 5,
-		Timeout:             5 * time.Second,
+		MaxRequestsInFlight: cfg.PromHTTPMaxRequestsInFlight,
+		Timeout:             cfg.PromHTTPTimeout,
 	}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -82,9 +82,9 @@ func main() {
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
 		Handler:      loggingMiddleware(recoveryMiddleware(mux)),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  cfg.HTTPReadTimeout,
+		WriteTimeout: cfg.HTTPWriteTimeout,
+		IdleTimeout:  cfg.HTTPIdleTimeout,
 	}
 
 	serverErr := make(chan error, 1)
@@ -110,7 +110,7 @@ func main() {
 
 	cancel()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server-probe shutdown error", "error", err)
