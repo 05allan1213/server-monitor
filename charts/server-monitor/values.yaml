@@ -1,0 +1,101 @@
+global:
+  imagePullPolicy: IfNotPresent
+  timezone: Asia/Shanghai
+
+config:
+  prometheusUrl: http://prometheus:9090
+  redisAddr: redis:6379
+  corsAllowedOrigins: ""
+  ginMode: release
+  readyTimeoutSeconds: "3"
+  requestTimeoutSeconds: "5"
+  hostsCacheTTLSeconds: "30"
+
+rateLimit:
+  enabled: true
+  requests: "120"
+  windowSeconds: "60"
+
+serverWeb:
+  enabled: true
+  replicas: 1
+  image:
+    repository: goproject-server-web
+    tag: latest
+  service:
+    type: NodePort
+    port: 8080
+    nodePort: 30080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+serverProbe:
+  enabled: true
+  image:
+    repository: goproject-server-probe
+    tag: latest
+  listenAddr: ":9090"
+  metricsPath: /metrics
+  scrapeInterval: "5"
+  hostProc: /proc
+  hostSys: /sys
+  service:
+    type: ClusterIP
+    port: 9090
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  service:
+    type: ClusterIP
+    port: 6379
+
+prometheus:
+  enabled: true
+  image: prom/prometheus:v2.51.0
+  retention: 6h
+  service:
+    type: NodePort
+    port: 9090
+    nodePort: 30090
+
+alertmanager:
+  enabled: true
+  image: prom/alertmanager:v0.27.0
+  service:
+    type: NodePort
+    port: 9093
+    nodePort: 30093
+
+grafana:
+  enabled: true
+  image: grafana/grafana:10.4.0
+  service:
+    type: NodePort
+    port: 3000
+    nodePort: 30030
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  cpuAverageUtilization: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: monitor.local
+  path: /
+  pathType: Prefix
