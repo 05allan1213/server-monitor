@@ -19,6 +19,7 @@ export const useMonitorStore = defineStore("monitor", () => {
   const refreshing = ref(false);
   const alertsError = ref("");
   const alertEventsError = ref("");
+  const hostsError = ref("");
   const hostSearchInput = ref("");
   const appliedHostQuery = ref("");
   const selectedSeverity = ref<SeverityFilter>("all");
@@ -210,6 +211,7 @@ export const useMonitorStore = defineStore("monitor", () => {
 
   async function loadHosts() {
     try {
+      hostsError.value = "";
       const data = await fetchHosts({
         status: selectedHostStatus.value,
         q: appliedHostQuery.value,
@@ -218,25 +220,34 @@ export const useMonitorStore = defineStore("monitor", () => {
       });
       hosts.value = sortHosts(data);
     } catch (err) {
-      console.error("loadHosts failed:", err);
+      hostsError.value = err instanceof Error ? err.message : "加载主机失败";
     }
   }
 
+  let refreshInProgress = false;
+
   async function refreshAll() {
+    if (refreshInProgress) {
+      return;
+    }
+    refreshInProgress = true;
     refreshing.value = true;
     try {
       await Promise.all([loadAlerts(), loadAlertEvents(), loadHosts()]);
       lastUpdateTime.value = Date.now();
     } finally {
-      loading.value = false;
+      if (loading.value) {
+        loading.value = false;
+      }
       refreshing.value = false;
+      refreshInProgress = false;
     }
   }
 
   function pushAlertEvent(event: AlertEvent) {
     alertEvents.value.unshift(event);
     if (alertEvents.value.length > 200) {
-      alertEvents.value.length = 200;
+      alertEvents.value = alertEvents.value.slice(0, 200);
     }
   }
 
@@ -314,6 +325,10 @@ export const useMonitorStore = defineStore("monitor", () => {
     }
     const timerId = window.setTimeout(() => {
       toasts.value = toasts.value.filter((t) => t.id !== id);
+      const idx = toastTimers.indexOf(timerId);
+      if (idx !== -1) {
+        toastTimers.splice(idx, 1);
+      }
     }, 4000);
     toastTimers.push(timerId);
   }
@@ -401,6 +416,7 @@ export const useMonitorStore = defineStore("monitor", () => {
     refreshing,
     alertsError,
     alertEventsError,
+    hostsError,
     hostSearchInput,
     appliedHostQuery,
     selectedSeverity,

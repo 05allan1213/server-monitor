@@ -29,13 +29,9 @@ const connectionLabel = computed(() => {
 
 watch(
   () => monitor.alerts.length,
-  (newLen, oldLen) => {
-    if (newLen > oldLen) {
-      document.title =
-        newLen > 0 ? `(${newLen}) 服务监控大屏` : "服务监控大屏";
-    } else if (newLen === 0) {
-      document.title = "服务监控大屏";
-    }
+  (newLen) => {
+    document.title =
+      newLen > 0 ? `(${newLen}) 服务监控大屏` : "服务监控大屏";
   },
 );
 
