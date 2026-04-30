@@ -8,34 +8,35 @@ import (
 )
 
 type Config struct {
-	ListenAddr             string
-	PrometheusURL          string
-	RequestTimeout         time.Duration
-	ReadyTimeout           time.Duration
-	HTTPReadHeaderTimeout  time.Duration
-	HTTPReadTimeout        time.Duration
-	HTTPWriteTimeout       time.Duration
-	HTTPIdleTimeout        time.Duration
-	ShutdownTimeout        time.Duration
-	HostsBroadcastInterval time.Duration
-	HostsCacheTTL          time.Duration
-	DashboardOverviewTTL   time.Duration
-	AlertEventDedupeTTL    time.Duration
-	CacheWriteTimeout      time.Duration
-	GinMode                string
-	TrustedProxies         []string
-	CORSOrigins            []string
-	RateLimit              RateLimitConfig
-	RedisAddr              string
-	RedisPassword          string
-	RedisDB                int
-	RedisStartupTimeout    time.Duration
-	RedisDialTimeout       time.Duration
-	RedisReadTimeout       time.Duration
-	RedisWriteTimeout      time.Duration
-	RedisConnMaxLifetime   time.Duration
-	RedisConnMaxIdleTime   time.Duration
-	StaticDir              string
+	ListenAddr                      string
+	PrometheusURL                   string
+	RequestTimeout                  time.Duration
+	ReadyTimeout                    time.Duration
+	HTTPReadHeaderTimeout           time.Duration
+	HTTPReadTimeout                 time.Duration
+	HTTPWriteTimeout                time.Duration
+	HTTPIdleTimeout                 time.Duration
+	ShutdownTimeout                 time.Duration
+	HostsBroadcastInterval          time.Duration
+	HostsCacheTTL                   time.Duration
+	DashboardOverviewTTL            time.Duration
+	AlertEventDedupeTTL             time.Duration
+	AlertmanagerWebhookMaxBodyBytes int64
+	CacheWriteTimeout               time.Duration
+	GinMode                         string
+	TrustedProxies                  []string
+	CORSOrigins                     []string
+	RateLimit                       RateLimitConfig
+	RedisAddr                       string
+	RedisPassword                   string
+	RedisDB                         int
+	RedisStartupTimeout             time.Duration
+	RedisDialTimeout                time.Duration
+	RedisReadTimeout                time.Duration
+	RedisWriteTimeout               time.Duration
+	RedisConnMaxLifetime            time.Duration
+	RedisConnMaxIdleTime            time.Duration
+	StaticDir                       string
 }
 
 type RateLimitConfig struct {
@@ -47,23 +48,24 @@ type RateLimitConfig struct {
 
 func Load() Config {
 	return Config{
-		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
-		PrometheusURL:          getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
-		RequestTimeout:         getEnvDurationSeconds("REQUEST_TIMEOUT_SECONDS", 5),
-		ReadyTimeout:           getEnvDurationSeconds("READY_TIMEOUT_SECONDS", 3),
-		HTTPReadHeaderTimeout:  getEnvDurationSeconds("HTTP_READ_HEADER_TIMEOUT_SECONDS", 5),
-		HTTPReadTimeout:        getEnvDurationSeconds("HTTP_READ_TIMEOUT_SECONDS", 15),
-		HTTPWriteTimeout:       getEnvDurationSeconds("HTTP_WRITE_TIMEOUT_SECONDS", 30),
-		HTTPIdleTimeout:        getEnvDurationSeconds("HTTP_IDLE_TIMEOUT_SECONDS", 120),
-		ShutdownTimeout:        getEnvDurationSeconds("SHUTDOWN_TIMEOUT_SECONDS", 5),
-		HostsBroadcastInterval: getEnvDurationSeconds("HOSTS_BROADCAST_INTERVAL_SECONDS", 5),
-		HostsCacheTTL:          getEnvDurationSeconds("HOSTS_CACHE_TTL_SECONDS", 30),
-		DashboardOverviewTTL:   getEnvDurationSeconds("DASHBOARD_OVERVIEW_TTL_SECONDS", 10),
-		AlertEventDedupeTTL:    getEnvDurationSeconds("ALERT_EVENT_DEDUPE_TTL_SECONDS", 86400),
-		CacheWriteTimeout:      getEnvDurationSeconds("CACHE_WRITE_TIMEOUT_SECONDS", 3),
-		GinMode:                getEnv("GIN_MODE", "debug"),
-		TrustedProxies:         getEnvList("TRUSTED_PROXIES"),
-		CORSOrigins:            getEnvList("CORS_ALLOWED_ORIGINS"),
+		ListenAddr:                      getEnv("LISTEN_ADDR", ":8080"),
+		PrometheusURL:                   getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
+		RequestTimeout:                  getEnvDurationSeconds("REQUEST_TIMEOUT_SECONDS", 5),
+		ReadyTimeout:                    getEnvDurationSeconds("READY_TIMEOUT_SECONDS", 3),
+		HTTPReadHeaderTimeout:           getEnvDurationSeconds("HTTP_READ_HEADER_TIMEOUT_SECONDS", 5),
+		HTTPReadTimeout:                 getEnvDurationSeconds("HTTP_READ_TIMEOUT_SECONDS", 15),
+		HTTPWriteTimeout:                getEnvDurationSeconds("HTTP_WRITE_TIMEOUT_SECONDS", 30),
+		HTTPIdleTimeout:                 getEnvDurationSeconds("HTTP_IDLE_TIMEOUT_SECONDS", 120),
+		ShutdownTimeout:                 getEnvDurationSeconds("SHUTDOWN_TIMEOUT_SECONDS", 5),
+		HostsBroadcastInterval:          getEnvDurationSeconds("HOSTS_BROADCAST_INTERVAL_SECONDS", 5),
+		HostsCacheTTL:                   getEnvDurationSeconds("HOSTS_CACHE_TTL_SECONDS", 30),
+		DashboardOverviewTTL:            getEnvDurationSeconds("DASHBOARD_OVERVIEW_TTL_SECONDS", 10),
+		AlertEventDedupeTTL:             getEnvDurationSeconds("ALERT_EVENT_DEDUPE_TTL_SECONDS", 86400),
+		AlertmanagerWebhookMaxBodyBytes: int64(getEnvPositiveInt("ALERTMANAGER_WEBHOOK_MAX_BODY_BYTES", 1048576)),
+		CacheWriteTimeout:               getEnvDurationSeconds("CACHE_WRITE_TIMEOUT_SECONDS", 3),
+		GinMode:                         getEnv("GIN_MODE", "debug"),
+		TrustedProxies:                  getEnvList("TRUSTED_PROXIES"),
+		CORSOrigins:                     getEnvList("CORS_ALLOWED_ORIGINS"),
 		RateLimit: RateLimitConfig{
 			Enabled:          getEnvBool("RATE_LIMIT_ENABLED", false),
 			Requests:         int64(getEnvPositiveInt("RATE_LIMIT_REQUESTS", 120)),

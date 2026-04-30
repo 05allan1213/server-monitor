@@ -52,7 +52,11 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/api/v1/alerts/active", handler.ActiveAlerts)
 	router.GET("/api/v1/alerts/events", handler.AlertEvents)
 	router.GET("/ws/alerts", handler.AlertsWebSocket)
-	router.POST("/api/v1/webhook/alertmanager", handler.AlertmanagerWebhook)
+	router.POST(
+		"/api/v1/webhook/alertmanager",
+		limitRequestBody(cfg.AlertmanagerWebhookMaxBodyBytes),
+		handler.AlertmanagerWebhook,
+	)
 
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
@@ -62,6 +66,15 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	}
 
 	return router, nil
+}
+
+func limitRequestBody(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if maxBytes > 0 {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		}
+		c.Next()
+	}
 }
 
 func serveStatic(staticDir string) gin.HandlerFunc {

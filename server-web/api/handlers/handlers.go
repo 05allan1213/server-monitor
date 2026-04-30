@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -347,9 +348,16 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 
 	var payload webhook.AlertmanagerWebhookRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, response{
+		status := http.StatusBadRequest
+		message := fmt.Sprintf("invalid alertmanager payload: %v", err)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			status = http.StatusRequestEntityTooLarge
+			message = "alertmanager payload too large"
+		}
+		c.JSON(status, response{
 			Status: "error",
-			Error:  fmt.Sprintf("invalid alertmanager payload: %v", err),
+			Error:  message,
 		})
 		return
 	}

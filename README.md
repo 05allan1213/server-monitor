@@ -281,6 +281,7 @@ server-monitor/
 | `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |
 | `DASHBOARD_OVERVIEW_TTL_SECONDS` | `10`             | 总览缓存 TTL（秒） |
 | `ALERT_EVENT_DEDUPE_TTL_SECONDS` | `86400`          | 告警事件去重 TTL（秒） |
+| `ALERTMANAGER_WEBHOOK_MAX_BODY_BYTES` | `1048576`    | Alertmanager Webhook 请求体大小上限（字节） |
 | `CACHE_WRITE_TIMEOUT_SECONDS` | `3`                 | 缓存写入超时（秒） |
 | `REDIS_STARTUP_TIMEOUT_SECONDS` | `5`               | 启动时 Redis 检查超时（秒） |
 | `REDIS_DIAL_TIMEOUT_SECONDS` | `5`                  | Redis 建连超时（秒） |

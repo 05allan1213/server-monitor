@@ -41,7 +41,7 @@ func main() {
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
 	alertHub := pubsub.NewHub(64)
-	websocketHub := ws.NewHub()
+	websocketHub := ws.NewHub(cfg.CORSOrigins)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

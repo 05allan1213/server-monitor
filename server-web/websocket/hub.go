@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,12 +20,6 @@ const (
 	maxMessageSize = 1024
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
 type Hub struct {
 	clients    map[*Client]bool
 	register   chan *Client
@@ -32,15 +28,26 @@ type Hub struct {
 	done       chan struct{}
 	once       sync.Once
 	observer   func(int)
+	upgrader   websocket.Upgrader
 }
 
-func NewHub() *Hub {
+func NewHub(allowedOrigins ...[]string) *Hub {
+	origins := mapAllowedOrigins(nil)
+	if len(allowedOrigins) > 0 {
+		origins = mapAllowedOrigins(allowedOrigins[0])
+	}
+
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client, 16),
 		unregister: make(chan *Client, 64),
 		broadcast:  make(chan []byte, 64),
 		done:       make(chan struct{}),
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return isOriginAllowed(r, origins)
+			},
+		},
 	}
 }
 
@@ -126,7 +133,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	default:
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return err
 	}
@@ -151,6 +158,36 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	go client.readPump()
 
 	return nil
+}
+
+func mapAllowedOrigins(origins []string) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(origins))
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func isOriginAllowed(r *http.Request, allowed map[string]struct{}) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	if _, ok := allowed["*"]; ok {
+		return true
+	}
+	if _, ok := allowed[origin]; ok {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(originURL.Host, r.Host)
 }
 
 type Client struct {
