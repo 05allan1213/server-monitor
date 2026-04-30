@@ -69,32 +69,43 @@ func main() {
 		Handler: router,
 	}
 
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("server-web listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server-web exited", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	exitCode := 0
+	select {
+	case sig := <-quit:
+		slog.Info("server-web received shutdown signal", "signal", sig.String())
+	case err := <-serverErr:
+		exitCode = 1
+		slog.Error("server-web exited", "error", err)
+	}
 
 	slog.Info("server-web shutting down...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server-web shutdown error", "error", err)
 	}
+	shutdownCancel()
 
 	cancel()
 	alertHub.Close()
 	<-alertHubConsumers
 
 	slog.Info("server-web stopped")
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
 
 func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.Hub, timeout time.Duration) {
