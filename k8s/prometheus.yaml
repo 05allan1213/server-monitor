@@ -52,6 +52,27 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
 
+      - job_name: 'server-web'
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              own_namespace: true
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: server-web
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: ${1}:8080
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
 ---
 # ------------------------------------------
 # 2. Prometheus 规则配置（ConfigMap）
