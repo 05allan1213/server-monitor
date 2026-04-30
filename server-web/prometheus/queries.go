@@ -63,7 +63,7 @@ var queryTemplates = map[string]queryTemplate{
 		build: func(instance string, params map[string]string) (string, error) {
 			mountpoint := params["mountpoint"]
 			if mountpoint == "" {
-				return "", fmt.Errorf("mountpoint is required for metric %s", MetricDiskUsage)
+				return fmt.Sprintf("max by (instance) (server_monitor_disk_usage_percent{instance=%s})", labelValue(instance)), nil
 			}
 			return fmt.Sprintf("server_monitor_disk_usage_percent{instance=%s,mountpoint=%s}", labelValue(instance), labelValue(mountpoint)), nil
 		},

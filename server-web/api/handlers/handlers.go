@@ -852,14 +852,15 @@ func parseHostMetricsRange(raw string) (string, hostMetricsRange, bool) {
 
 func buildHostMetricQueries(mountpoint string) []hostMetricQuery {
 	mountpoint = strings.TrimSpace(mountpoint)
-	if mountpoint == "" {
-		mountpoint = "/"
+	diskParams := map[string]string{}
+	if mountpoint != "" {
+		diskParams["mountpoint"] = mountpoint
 	}
 
 	return []hostMetricQuery{
 		{name: "cpu", metric: promclient.MetricCPUUsage},
 		{name: "memory", metric: promclient.MetricMemoryUsage},
-		{name: "disk", metric: promclient.MetricDiskUsage, params: map[string]string{"mountpoint": mountpoint}},
+		{name: "disk", metric: promclient.MetricDiskUsage, params: diskParams},
 		{name: "network_recv", metric: promclient.MetricNetworkRecv},
 		{name: "network_sent", metric: promclient.MetricNetworkSent},
 		{name: "load1", metric: promclient.MetricLoad1},

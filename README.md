@@ -304,6 +304,7 @@ server-monitor/
 - Docker Compose 部署时，`server-web` 镜像内默认使用 `STATIC_DIR=/app/static`
 - Docker Compose 本地部署默认使用 `REDIS_PASSWORD=server-monitor-local-redis`，生产环境必须通过环境变量覆盖
 - K8s / Helm 部署默认使用 `monitor-secret` 注入 `REDIS_PASSWORD`、`GRAFANA_ADMIN_USER`、`GRAFANA_ADMIN_PASSWORD`，生产环境必须替换 Secret 中的默认密码
+- Redis 生产环境建议在宿主机开启 `vm.overcommit_memory=1`，否则 Redis 可能在后台保存或内存紧张时输出 warning 并存在失败风险
 - 本地开发模式通常不设置 `STATIC_DIR`，由 Vite 开发服务器在 `5173` 端口提供前端页面
 
 ## 技术栈
