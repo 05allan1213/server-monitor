@@ -35,6 +35,14 @@ func (c *Client) Enabled() bool {
 	return c != nil && c.enabled
 }
 
+func (c *Client) Close() error {
+	if !c.Enabled() {
+		return nil
+	}
+
+	return c.client.Close()
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")

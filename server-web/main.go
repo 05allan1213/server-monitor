@@ -46,13 +46,19 @@ func main() {
 
 	go websocketHub.Run(ctx)
 
+	var subscriberDone <-chan struct{}
 	if redisClient.Enabled() {
 		if err := redisClient.Ping(context.Background()); err != nil {
 			slog.Error("redis ping failed at startup", "addr", cfg.RedisAddr, "error", err)
 		}
 
 		subscriber := pubsub.NewSubscriber(redisClient, alertHub, rediscache.AlertChannel)
-		go subscriber.Run(ctx)
+		done := make(chan struct{})
+		subscriberDone = done
+		go func() {
+			defer close(done)
+			subscriber.Run(ctx)
+		}()
 	}
 
 	alertHubConsumers := make(chan struct{})
@@ -110,6 +116,13 @@ func main() {
 	shutdownCancel()
 
 	cancel()
+	if subscriberDone != nil {
+		<-subscriberDone
+	}
+	if err := redisClient.Close(); err != nil {
+		slog.Error("redis close failed", "error", err)
+	}
+
 	alertHub.Close()
 	<-alertHubConsumers
 
