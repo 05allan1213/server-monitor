@@ -64,6 +64,11 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: GIN_MODE
+            - name: CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: CORS_ALLOWED_ORIGINS
             - name: READY_TIMEOUT_SECONDS
               valueFrom:
                 configMapKeyRef:

@@ -22,7 +22,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	if websocketHub != nil {
 		websocketHub.SetConnectionObserver(metrics.SetWebSocketConnections)
 	}
-	router.Use(middleware.Logging(), gin.Recovery(), metrics.Handler())
+	router.Use(middleware.CORS(cfg.CORSOrigins), middleware.Logging(), gin.Recovery(), metrics.Handler())
 
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return nil, err

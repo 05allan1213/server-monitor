@@ -265,6 +265,7 @@ server-monitor/
 | `REDIS_ADDR`              | (空)                      | Redis 地址    |
 | `REDIS_PASSWORD`          | (空)                      | Redis 密码    |
 | `REDIS_DB`                | `0`                      | Redis 数据库   |
+| `CORS_ALLOWED_ORIGINS`    | (空)                      | 允许跨域来源，多个用逗号分隔 |
 | `REQUEST_TIMEOUT_SECONDS` | `5`                      | 请求超时（秒）    |
 | `READY_TIMEOUT_SECONDS`   | `3`                      | 就绪检查超时（秒）  |
 | `HOSTS_CACHE_TTL_SECONDS` | `30`                     | 主机缓存 TTL（秒） |

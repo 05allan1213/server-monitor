@@ -15,6 +15,7 @@ type Config struct {
 	HostsCacheTTL  time.Duration
 	GinMode        string
 	TrustedProxies []string
+	CORSOrigins    []string
 	RedisAddr      string
 	RedisPassword  string
 	RedisDB        int
@@ -30,6 +31,7 @@ func Load() Config {
 		HostsCacheTTL:  time.Duration(getEnvInt("HOSTS_CACHE_TTL_SECONDS", 30)) * time.Second,
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
+		CORSOrigins:    getEnvList("CORS_ALLOWED_ORIGINS"),
 		RedisAddr:      getEnv("REDIS_ADDR", ""),
 		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
 		RedisDB:        getEnvInt("REDIS_DB", 0),
