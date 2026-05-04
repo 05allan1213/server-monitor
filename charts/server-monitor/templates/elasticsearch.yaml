@@ -19,7 +19,8 @@ spec:
       labels:
         app: elasticsearch
     spec:
-      {{- with .Values.global.podSecurityContext }}
+      {{- $podSecurityContext := .Values.elasticsearch.podSecurityContext | default .Values.global.podSecurityContext }}
+      {{- with $podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}

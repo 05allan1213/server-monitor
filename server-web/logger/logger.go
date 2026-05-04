@@ -21,24 +21,11 @@ func Init(service string) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "ts",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
-		EncodeDuration: zapcore.MillisDurationEncoder,
-		EncodeName:     zapcore.FullNameEncoder,
-	}
-
 	cfg := zap.Config{
 		Level:            zap.NewAtomicLevelAt(level),
 		Development:      false,
 		Encoding:         "json",
-		EncoderConfig:    encoderConfig,
+		EncoderConfig:    newEncoderConfig(),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
 	}
@@ -95,7 +82,27 @@ func instance() string {
 }
 
 func isIgnorableSyncError(err error) bool {
-	return errors.Is(err, syscall.EINVAL)
+	return errors.Is(err, syscall.EINVAL) ||
+		errors.Is(err, syscall.ENOTTY) ||
+		errors.Is(err, syscall.EBADF)
+}
+
+func newEncoderConfig() zapcore.EncoderConfig {
+	return zapcore.EncoderConfig{
+		TimeKey:        "ts",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.MillisDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
+	}
 }
 
 type slogHandler struct {

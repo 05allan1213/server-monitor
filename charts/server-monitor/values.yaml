@@ -139,6 +139,8 @@ elasticsearch:
   image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
   clusterName: sm-logs
   javaOpts: "-Xms512m -Xmx512m"
+  podSecurityContext:
+    fsGroup: 1000
   init:
     enabled: true
     image: curlimages/curl:8.8.0
