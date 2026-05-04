@@ -86,21 +86,18 @@ func getEnvFloatRange(key string, fallback, minValue, maxValue float64) float64 
 }
 
 func getEnvList(key string, fallback []string) []string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
+	value, exists := os.LookupEnv(key)
+	if !exists {
 		return append([]string(nil), fallback...)
 	}
 
-	parts := strings.Split(value, ",")
+	parts := strings.Split(strings.TrimSpace(value), ",")
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed != "" {
 			result = append(result, trimmed)
 		}
-	}
-	if len(result) == 0 {
-		return append([]string(nil), fallback...)
 	}
 	return result
 }

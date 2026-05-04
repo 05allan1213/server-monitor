@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	RedisActiveAlertsKey = "alert:active:enriched"
+	RedisActiveAlertsKey = "alert:active"
 	RedisStatsKey        = "alert:stats"
 	DefaultDedupTTL      = 5 * time.Minute
 )
@@ -97,12 +97,7 @@ func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
 func (s *Store) apply(ctx context.Context, event Event) error {
 	switch event.Status {
 	case StatusFiring:
-		active := ActiveAlert{
-			Event:        event,
-			AggregateKey: AggregateKey(event),
-			UpdatedAt:    receivedAtOrNow(event),
-		}
-		payload, err := json.Marshal(active)
+		payload, err := json.Marshal(event)
 		if err != nil {
 			return fmt.Errorf("marshal active alert: %w", err)
 		}

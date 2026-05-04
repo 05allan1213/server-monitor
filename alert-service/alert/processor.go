@@ -111,12 +111,26 @@ func (p *Processor) Stats() map[string]int64 {
 }
 
 func DedupKey(event Event) string {
-	return strings.Join([]string{
+	parts := []string{
 		"alert",
 		"dedup",
 		event.Fingerprint,
 		event.Status,
-	}, ":")
+	}
+	if !event.StartsAt.IsZero() {
+		parts = append(parts, formatDedupTime(event.StartsAt))
+	}
+	if !event.EndsAt.IsZero() {
+		parts = append(parts, formatDedupTime(event.EndsAt))
+	}
+	return strings.Join(parts, ":")
+}
+
+func formatDedupTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func AggregateKey(event Event) string {
