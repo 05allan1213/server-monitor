@@ -18,6 +18,7 @@ const (
 
 type RedisClient interface {
 	SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
+	HGet(ctx context.Context, key, field string) ([]byte, bool, error)
 	HSet(ctx context.Context, key, field string, value []byte) error
 	HDel(ctx context.Context, key, field string) error
 	HIncrBy(ctx context.Context, key, field string, incr int64) error
@@ -101,10 +102,17 @@ func (s *Store) apply(ctx context.Context, event Event) error {
 		if err != nil {
 			return fmt.Errorf("marshal active alert: %w", err)
 		}
+		previousValue, existed, err := s.client.HGet(ctx, RedisActiveAlertsKey, event.Fingerprint)
+		if err != nil {
+			return fmt.Errorf("load previous active alert: %w", err)
+		}
 		if err := s.client.HSet(ctx, RedisActiveAlertsKey, event.Fingerprint, payload); err != nil {
 			return fmt.Errorf("store active alert: %w", err)
 		}
 		if err := s.client.HIncrBy(ctx, RedisStatsKey, alertNameOrFallback(event), 1); err != nil {
+			if rollbackErr := rollbackActiveAlert(ctx, s.client, event.Fingerprint, previousValue, existed); rollbackErr != nil {
+				return fmt.Errorf("increment alert stats: %w; rollback active alert: %v", err, rollbackErr)
+			}
 			return fmt.Errorf("increment alert stats: %w", err)
 		}
 	case StatusResolved:
@@ -113,6 +121,13 @@ func (s *Store) apply(ctx context.Context, event Event) error {
 		}
 	}
 	return nil
+}
+
+func rollbackActiveAlert(ctx context.Context, client RedisClient, fingerprint string, previousValue []byte, existed bool) error {
+	if existed {
+		return client.HSet(ctx, RedisActiveAlertsKey, fingerprint, previousValue)
+	}
+	return client.HDel(ctx, RedisActiveAlertsKey, fingerprint)
 }
 
 func (s *Store) observe(status, result string) {

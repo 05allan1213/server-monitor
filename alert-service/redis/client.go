@@ -76,6 +76,21 @@ func (c *Client) HSet(ctx context.Context, key, field string, value []byte) erro
 	return c.client.HSet(ctx, key, field, value).Err()
 }
 
+func (c *Client) HGet(ctx context.Context, key, field string) ([]byte, bool, error) {
+	if !c.Enabled() {
+		return nil, false, errors.New("redis is not enabled")
+	}
+
+	value, err := c.client.HGet(ctx, key, field).Bytes()
+	if err == nil {
+		return value, true, nil
+	}
+	if errors.Is(err, redis.Nil) {
+		return nil, false, nil
+	}
+	return nil, false, err
+}
+
 func (c *Client) HDel(ctx context.Context, key, field string) error {
 	if !c.Enabled() {
 		return errors.New("redis is not enabled")
