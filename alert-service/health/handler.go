@@ -1,23 +1,37 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
-type Handler struct {
-	ready atomic.Bool
+type Pinger interface {
+	Ping(ctx context.Context) error
 }
 
-func NewHandler() *Handler {
-	h := &Handler{}
-	h.ready.Store(true)
+type Handler struct {
+	redis       Pinger
+	pingTimeout time.Duration
+	kafkaReady  atomic.Bool
+}
+
+func NewHandler(redis Pinger, pingTimeout time.Duration) *Handler {
+	if pingTimeout <= 0 {
+		pingTimeout = time.Second
+	}
+	h := &Handler{
+		redis:       redis,
+		pingTimeout: pingTimeout,
+	}
+	h.kafkaReady.Store(false)
 	return h
 }
 
-func (h *Handler) SetReady(ready bool) {
-	h.ready.Store(ready)
+func (h *Handler) SetKafkaReady(ready bool) {
+	h.kafkaReady.Store(ready)
 }
 
 func (h *Handler) Healthz(w http.ResponseWriter, _ *http.Request) {
@@ -29,12 +43,42 @@ func (h *Handler) Healthz(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (h *Handler) Readyz(w http.ResponseWriter, _ *http.Request) {
-	if !h.ready.Load() {
+func (h *Handler) Readyz(w http.ResponseWriter, r *http.Request) {
+	if !h.kafkaReady.Load() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
 			"status": "error",
-			"data": map[string]bool{
-				"ready": false,
+			"data": map[string]interface{}{
+				"ready":  false,
+				"kafka":  false,
+				"redis":  false,
+				"reason": "kafka not ready",
+			},
+		})
+		return
+	}
+	if h.redis == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"status": "error",
+			"data": map[string]interface{}{
+				"ready":  false,
+				"kafka":  true,
+				"redis":  false,
+				"reason": "redis not configured",
+			},
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.pingTimeout)
+	defer cancel()
+	if err := h.redis.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"status": "error",
+			"data": map[string]interface{}{
+				"ready":  false,
+				"kafka":  true,
+				"redis":  false,
+				"reason": "redis not ready",
 			},
 		})
 		return
@@ -44,6 +88,8 @@ func (h *Handler) Readyz(w http.ResponseWriter, _ *http.Request) {
 		"status": "success",
 		"data": map[string]bool{
 			"ready": true,
+			"kafka": true,
+			"redis": true,
 		},
 	})
 }

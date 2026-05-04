@@ -47,17 +47,20 @@ func NewConsumer(brokers []string, groupID string, processor AlertProcessor) (*C
 	}, nil
 }
 
-func (c *Consumer) Consume(ctx context.Context, onReady func()) error {
+func (c *Consumer) Consume(ctx context.Context, onReady, onNotReady func()) error {
 	if c == nil || c.group == nil {
 		return errors.New("kafka consumer is not initialized")
 	}
 
 	c.handler.onReady = onReady
+	c.handler.onNotReady = onNotReady
 	for ctx.Err() == nil {
 		if err := c.group.Consume(ctx, c.topics, c.handler); err != nil {
+			c.handler.notifyNotReady()
 			return fmt.Errorf("consume kafka topics: %w", err)
 		}
 	}
+	c.handler.notifyNotReady()
 	return nil
 }
 
@@ -69,8 +72,9 @@ func (c *Consumer) Close() error {
 }
 
 type consumerGroupHandler struct {
-	processor AlertProcessor
-	onReady   func()
+	processor  AlertProcessor
+	onReady    func()
+	onNotReady func()
 }
 
 func (h *consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
@@ -81,6 +85,7 @@ func (h *consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
 }
 
 func (h *consumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error {
+	h.notifyNotReady()
 	return nil
 }
 
@@ -118,4 +123,10 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 	}
 
 	marker.MarkMessage(msg, "")
+}
+
+func (h *consumerGroupHandler) notifyNotReady() {
+	if h.onNotReady != nil {
+		h.onNotReady()
+	}
 }

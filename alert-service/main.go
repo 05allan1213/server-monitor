@@ -7,13 +7,24 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 
+	"alert-service/alert"
 	"alert-service/config"
 	"alert-service/health"
+	"alert-service/kafka"
 	"alert-service/logger"
+	redisstore "alert-service/redis"
 	"alert-service/tracer"
+)
+
+const (
+	redisDialTimeout  = 3 * time.Second
+	redisReadTimeout  = 2 * time.Second
+	redisWriteTimeout = 2 * time.Second
+	readinessTimeout  = time.Second
 )
 
 func main() {
@@ -44,7 +55,26 @@ func main() {
 		)
 	}
 
-	healthHandler := health.NewHandler()
+	redisClient := redisstore.NewClient(redisstore.Options{
+		Addr:         cfg.RedisAddr,
+		Password:     cfg.RedisPassword,
+		DialTimeout:  redisDialTimeout,
+		ReadTimeout:  redisReadTimeout,
+		WriteTimeout: redisWriteTimeout,
+	})
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			zap.L().Warn("redis close failed", zap.Error(err))
+		}
+	}()
+
+	store := alert.NewStore(redisClient, alert.DefaultDedupTTL)
+	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, store)
+	if err != nil {
+		zap.L().Fatal("kafka consumer init failed", zap.Error(err))
+	}
+
+	healthHandler := health.NewHandler(redisClient, readinessTimeout)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/readyz", healthHandler.Readyz)
@@ -57,6 +87,26 @@ func main() {
 		WriteTimeout:      cfg.HTTPWriteTimeout,
 		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	consumerErr := make(chan error, 1)
+	consumerDone := make(chan struct{})
+	go func() {
+		defer close(consumerDone)
+		if err := consumer.Consume(ctx,
+			func() {
+				healthHandler.SetKafkaReady(true)
+				zap.L().Info("kafka consumer ready", zap.Strings("brokers", cfg.KafkaBrokers), zap.String("group_id", cfg.KafkaGroupID))
+			},
+			func() {
+				healthHandler.SetKafkaReady(false)
+			},
+		); err != nil && ctx.Err() == nil {
+			consumerErr <- err
+		}
+	}()
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -76,9 +126,23 @@ func main() {
 	case err := <-serverErr:
 		exitCode = 1
 		zap.L().Error("alert-service exited", zap.Error(err))
+	case err := <-consumerErr:
+		exitCode = 1
+		zap.L().Error("alert-service consumer exited", zap.Error(err))
 	}
 
 	zap.L().Info("alert-service shutting down")
+	cancel()
+	healthHandler.SetKafkaReady(false)
+	if err := consumer.Close(); err != nil {
+		zap.L().Warn("kafka consumer close failed", zap.Error(err))
+	}
+	select {
+	case <-consumerDone:
+	case <-time.After(cfg.ShutdownTimeout):
+		zap.L().Warn("kafka consumer shutdown timed out")
+	}
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		zap.L().Error("alert-service shutdown error", zap.Error(err))
