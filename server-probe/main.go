@@ -282,7 +282,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				zap.L().Error("http request panic recovered",
+				logger.FromContext(r.Context()).Error("http request panic recovered",
 					zap.String("request_id", requestIDFromRequest(r)),
 					zap.String("method", r.Method),
 					zap.String("path", r.URL.Path),

@@ -19,6 +19,7 @@ type AlertRecord struct {
 }
 
 type AlertEvent struct {
+	Type         string            `json:"type"`
 	Status       string            `json:"status"`
 	Fingerprint  string            `json:"fingerprint"`
 	Labels       map[string]string `json:"labels"`
@@ -31,6 +32,7 @@ type AlertEvent struct {
 
 func NewAlertEvent(alert AlertRecord, receivedAt time.Time) AlertEvent {
 	return AlertEvent{
+		Type:         "alert",
 		Status:       alert.Status,
 		Fingerprint:  alert.Fingerprint,
 		Labels:       alert.Labels,

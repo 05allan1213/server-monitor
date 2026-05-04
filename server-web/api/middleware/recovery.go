@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+
+	"server-web/logger"
 )
 
 func Recovery() gin.HandlerFunc {
@@ -16,7 +18,7 @@ func Recovery() gin.HandlerFunc {
 					path = c.Request.URL.Path
 				}
 
-				zap.L().Error("http request panic recovered",
+				logger.FromContext(c.Request.Context()).Error("http request panic recovered",
 					zap.String("request_id", RequestID(c)),
 					zap.String("method", c.Request.Method),
 					zap.String("path", path),
