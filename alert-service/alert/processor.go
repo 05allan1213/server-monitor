@@ -27,9 +27,9 @@ type Event struct {
 }
 
 type ActiveAlert struct {
-	Event        Event
-	AggregateKey string
-	UpdatedAt    time.Time
+	Event        Event     `json:"event"`
+	AggregateKey string    `json:"aggregate_key"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Processor struct {
@@ -51,11 +51,8 @@ func (p *Processor) Process(_ context.Context, event Event) error {
 	if p == nil {
 		return errors.New("alert processor is nil")
 	}
-	if event.Fingerprint == "" {
-		return errors.New("alert fingerprint is required")
-	}
-	if event.Status != StatusFiring && event.Status != StatusResolved {
-		return fmt.Errorf("unsupported alert status %q", event.Status)
+	if err := validateEvent(event); err != nil {
+		return err
 	}
 
 	p.mu.Lock()
@@ -77,6 +74,16 @@ func (p *Processor) Process(_ context.Context, event Event) error {
 		p.stats[alertNameOrFallback(event)]++
 	case StatusResolved:
 		delete(p.activeAlerts, event.Fingerprint)
+	}
+	return nil
+}
+
+func validateEvent(event Event) error {
+	if event.Fingerprint == "" {
+		return errors.New("alert fingerprint is required")
+	}
+	if event.Status != StatusFiring && event.Status != StatusResolved {
+		return fmt.Errorf("unsupported alert status %q", event.Status)
 	}
 	return nil
 }
