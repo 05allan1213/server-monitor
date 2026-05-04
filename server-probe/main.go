@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
 	"server-probe/collector"
@@ -117,7 +118,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
-		Handler:      loggingMiddleware(recoveryMiddleware(mux)),
+		Handler:      tracedHandler(loggingMiddleware(recoveryMiddleware(mux))),
 		ReadTimeout:  cfg.HTTPReadTimeout,
 		WriteTimeout: cfg.HTTPWriteTimeout,
 		IdleTimeout:  cfg.HTTPIdleTimeout,
@@ -256,6 +257,10 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			zap.String("client_ip", r.RemoteAddr),
 		)
 	})
+}
+
+func tracedHandler(next http.Handler) http.Handler {
+	return otelhttp.NewHandler(next, "server-probe")
 }
 
 func newRequestID(now time.Time) string {
