@@ -248,7 +248,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		latency := time.Since(start)
-		zap.L().Info("http request completed",
+		logger.FromContext(r.Context()).Info("http request completed",
 			zap.String("request_id", requestID),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -53,6 +54,18 @@ func Sync(log *zap.Logger) {
 	if err := log.Sync(); err != nil && !isIgnorableSyncError(err) {
 		fmt.Fprintf(os.Stderr, "logger sync failed: %v\n", err)
 	}
+}
+
+func FromContext(ctx context.Context) *zap.Logger {
+	log := zap.L()
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
+		return log
+	}
+	return log.With(
+		zap.String("trace_id", spanCtx.TraceID().String()),
+		zap.String("span_id", spanCtx.SpanID().String()),
+	)
 }
 
 func parseLevel(raw string) (zapcore.Level, error) {
