@@ -1,0 +1,7 @@
+service:
+  all_in_one: true
+collectors:
+  otlp:
+    enabled: true
+storage:
+  type: memory
