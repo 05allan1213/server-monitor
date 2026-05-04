@@ -8,7 +8,11 @@ import (
 	"sync"
 
 	"github.com/IBM/sarama"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+
+	"alert-service/logger"
 )
 
 type AlertProcessor interface {
@@ -152,9 +156,17 @@ type messageMarker interface {
 
 func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messageMarker, msg *sarama.ConsumerMessage) {
 	var event AlertEvent
+	ctx, span := otel.Tracer("alert-service/kafka").Start(ctx, "alert-service.consume")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination.name", msg.Topic),
+		attribute.Int64("messaging.kafka.partition", int64(msg.Partition)),
+		attribute.Int64("messaging.kafka.offset", msg.Offset),
+	)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			zap.L().Error("process alert event panic recovered, skipping offset commit",
+			logger.FromContext(ctx).Error("process alert event panic recovered, skipping offset commit",
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
 				zap.Int64("offset", msg.Offset),
@@ -167,7 +179,7 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 	}()
 
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
-		zap.L().Warn("unmarshal alert event failed",
+		logger.FromContext(ctx).Warn("unmarshal alert event failed",
 			zap.String("topic", msg.Topic),
 			zap.Int32("partition", msg.Partition),
 			zap.Int64("offset", msg.Offset),
@@ -179,8 +191,12 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 	}
 
 	if err := h.processor.Process(ctx, event); err != nil {
+		span.SetAttributes(
+			attribute.String("alert.fingerprint", event.Fingerprint),
+			attribute.String("alert.status", event.Status),
+		)
 		if IsPermanent(err) {
-			zap.L().Warn("process alert event failed permanently, committing offset",
+			logger.FromContext(ctx).Warn("process alert event failed permanently, committing offset",
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
 				zap.Int64("offset", msg.Offset),
@@ -193,7 +209,7 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 			return
 		}
 
-		zap.L().Error("process alert event failed, skipping offset commit",
+		logger.FromContext(ctx).Error("process alert event failed, skipping offset commit",
 			zap.String("topic", msg.Topic),
 			zap.Int32("partition", msg.Partition),
 			zap.Int64("offset", msg.Offset),

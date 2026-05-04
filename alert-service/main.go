@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	"alert-service/alert"
@@ -100,20 +102,19 @@ func main() {
 	consumerErr := make(chan error, 1)
 	consumerDone := make(chan struct{})
 	go func() {
-		defer close(consumerDone)
-		if err := consumer.Consume(ctx,
-			func() {
-				healthHandler.SetKafkaReady(true)
-				serviceMetrics.SetKafkaReady(true)
-				zap.L().Info("kafka consumer ready", zap.Strings("brokers", cfg.KafkaBrokers), zap.String("group_id", cfg.KafkaGroupID))
-			},
-			func() {
-				healthHandler.SetKafkaReady(false)
-				serviceMetrics.SetKafkaReady(false)
-			},
-		); err != nil && ctx.Err() == nil {
-			consumerErr <- err
-		}
+		runConsumerLoop(ctx, consumerDone, consumerErr, func() error {
+			return consumer.Consume(ctx,
+				func() {
+					healthHandler.SetKafkaReady(true)
+					serviceMetrics.SetKafkaReady(true)
+					zap.L().Info("kafka consumer ready", zap.Strings("brokers", cfg.KafkaBrokers), zap.String("group_id", cfg.KafkaGroupID))
+				},
+				func() {
+					healthHandler.SetKafkaReady(false)
+					serviceMetrics.SetKafkaReady(false)
+				},
+			)
+		})
 	}()
 
 	serverErr := make(chan error, 1)
@@ -192,6 +193,14 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := otel.Tracer("alert-service/http").Start(r.Context(), r.Method+" "+r.URL.Path)
+		defer span.End()
+		span.SetAttributes(
+			attribute.String("http.method", r.Method),
+			attribute.String("http.route", r.URL.Path),
+		)
+		r = r.WithContext(ctx)
+
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
@@ -201,7 +210,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
-		zap.L().Info("http request completed",
+		logger.FromContext(r.Context()).Info("http request completed",
 			zap.String("module", "http"),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
@@ -216,7 +225,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				zap.L().Error("http request panic recovered",
+				logger.FromContext(r.Context()).Error("http request panic recovered",
 					zap.String("module", "http"),
 					zap.String("method", r.Method),
 					zap.String("path", r.URL.Path),
@@ -249,4 +258,26 @@ func phaseTimeout(total time.Duration, phases int) time.Duration {
 		return total
 	}
 	return perPhase
+}
+
+func runConsumerLoop(ctx context.Context, done chan<- struct{}, errCh chan<- error, consume func() error) {
+	defer close(done)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			zap.L().Error("alert-service consumer panic recovered", zap.Any("panic", recovered))
+			if ctx.Err() == nil {
+				select {
+				case errCh <- fmt.Errorf("alert-service consumer panic: %v", recovered):
+				default:
+				}
+			}
+		}
+	}()
+
+	if err := consume(); err != nil && ctx.Err() == nil {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
 }
