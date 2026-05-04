@@ -7,6 +7,16 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      timeInterval: "15s"
+    editable: true
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    jsonData:
+      timeInterval: "15s"
     editable: true
   - name: Elasticsearch
     uid: elasticsearch
