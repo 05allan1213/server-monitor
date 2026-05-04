@@ -113,6 +113,26 @@ services:
           memory: 1G
 
   # ------------------------------------------
+  # VictoriaMetrics 长期指标存储
+  # ------------------------------------------
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.102.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8428:8428"
+    volumes:
+      - victoriametrics-data:/victoria-metrics-data
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--retentionPeriod=90d"
+      - "--httpListenAddr=:8428"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+  # ------------------------------------------
   # AlertManager 告警管理
   # ------------------------------------------
   alertmanager:
@@ -308,3 +328,4 @@ volumes:
   prometheus-data:
   grafana-data:
   elasticsearch-data:
+  victoriametrics-data:
