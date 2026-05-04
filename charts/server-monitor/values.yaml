@@ -51,6 +51,23 @@ serverWeb:
       cpu: 200m
       memory: 256Mi
 
+alertService:
+  enabled: true
+  replicas: 1
+  image:
+    repository: goproject-alert-service
+    tag: 0.1.0
+  service:
+    type: ClusterIP
+    port: 8081
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 serverProbe:
   enabled: true
   image:
