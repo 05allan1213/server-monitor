@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	"server-web/api/handlers"
 	"server-web/api/middleware"
@@ -24,6 +25,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	}
 	router.Use(
 		middleware.CORS(cfg.CORSOrigins),
+		otelgin.Middleware("server-web"),
 		middleware.Logging(),
 		middleware.Recovery(),
 		metrics.Handler(),
