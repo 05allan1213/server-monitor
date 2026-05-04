@@ -76,6 +76,15 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
 
+    {{- if .Values.victoriametrics.enabled }}
+    remote_write:
+      - url: http://victoriametrics:8428/api/v1/write
+        queue_config:
+          max_samples_per_send: 10000
+          capacity: 20000
+          max_shards: 5
+    {{- end }}
+
 ---
 # ------------------------------------------
 # 2. Prometheus 规则配置（ConfigMap）
