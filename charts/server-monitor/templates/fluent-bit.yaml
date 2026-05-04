@@ -128,6 +128,41 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if and .Values.elasticsearch.enabled .Values.elasticsearch.init.enabled }}
+      initContainers:
+        - name: wait-elasticsearch-init
+          image: {{ .Values.elasticsearch.init.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              ES_URL="${ELASTICSEARCH_URL:-http://elasticsearch:9200}"
+              ILM_POLICY_NAME="${ILM_POLICY_NAME:-sm-logs-policy}"
+              INDEX_TEMPLATE_NAME="${INDEX_TEMPLATE_NAME:-sm-logs-template}"
+
+              attempt=1
+              while [ "$attempt" -le 120 ]; do
+                if curl -fsS "${ES_URL}/_ilm/policy/${ILM_POLICY_NAME}" >/dev/null \
+                  && curl -fsS "${ES_URL}/_index_template/${INDEX_TEMPLATE_NAME}" >/dev/null; then
+                  exit 0
+                fi
+                attempt=$((attempt + 1))
+                sleep 2
+              done
+
+              echo "Elasticsearch log template or ILM policy is not ready" >&2
+              exit 1
+          env:
+            - name: ELASTICSEARCH_URL
+              value: http://elasticsearch:9200
+            - name: ILM_POLICY_NAME
+              value: {{ .Values.elasticsearch.init.ilmPolicyName | quote }}
+            - name: INDEX_TEMPLATE_NAME
+              value: {{ .Values.elasticsearch.init.indexTemplateName | quote }}
+          resources:
+            {{- toYaml .Values.elasticsearch.init.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: fluent-bit
           image: {{ .Values.fluentBit.image | quote }}

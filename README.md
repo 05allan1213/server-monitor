@@ -230,6 +230,7 @@ Helm Chart 在第二阶段会部署 Kubernetes 版日志链路：
 - Elasticsearch：单节点 StatefulSet，Service 名称 `elasticsearch`，默认关闭安全认证，仅用于学习/开发环境。
 - Kibana：Deployment，Service 名称 `kibana`，默认 NodePort `30561`。
 - Fluent Bit：DaemonSet，每个 Node 一个 Pod，采集 `/var/log/containers/*.log`，按 CRI 格式解析并通过 Kubernetes filter 添加 Pod 元数据。
+- Fluent Bit 启动前会等待 `sm-logs-policy` 和 `sm-logs-template` 初始化完成，避免先写入日志导致索引 mapping 不稳定。
 
 默认开关位于 `charts/server-monitor/values.yaml`：
 
