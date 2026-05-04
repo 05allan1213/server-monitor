@@ -142,6 +142,11 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: TRACE_SAMPLE_RATE
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: KAFKA_BROKERS
 
 ---
 # ------------------------------------------

@@ -25,6 +25,7 @@ data:
   HOSTS_CACHE_TTL_SECONDS: {{ .Values.config.hostsCacheTTLSeconds | quote }}
   TRACE_OTLP_ENDPOINT: {{ .Values.config.traceOtlpEndpoint | quote }}
   TRACE_SAMPLE_RATE: {{ .Values.config.traceSampleRate | quote }}
+  KAFKA_BROKERS: {{ ternary .Values.config.kafkaBrokers "" .Values.kafka.enabled | quote }}
   PROBE_LISTEN_ADDR: {{ .Values.serverProbe.listenAddr | quote }}
   PROBE_METRICS_PATH: {{ .Values.serverProbe.metricsPath | quote }}
   PROBE_SCRAPE_INTERVAL: {{ .Values.serverProbe.scrapeInterval | quote }}
