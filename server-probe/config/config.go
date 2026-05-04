@@ -22,6 +22,8 @@ type Config struct {
 	Hostname                    string
 	HostProc                    string
 	HostSys                     string
+	TraceOTLPEndpoint           string
+	TraceSampleRate             float64
 }
 
 func Load() Config {
@@ -38,6 +40,8 @@ func Load() Config {
 		Hostname:                    getEnv("HOSTNAME", getHostname()),
 		HostProc:                    getEnv("HOST_PROC", ""),
 		HostSys:                     getEnv("HOST_SYS", ""),
+		TraceOTLPEndpoint:           getEnvNonEmpty("TRACE_OTLP_ENDPOINT", ""),
+		TraceSampleRate:             getEnvFloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),
 	}
 }
 
@@ -90,4 +94,16 @@ func getEnvInt(key string, fallback int) int {
 
 func getEnvDurationSeconds(key string, fallback int) time.Duration {
 	return time.Duration(getEnvInt(key, fallback)) * time.Second
+}
+
+func getEnvFloatRange(key string, fallback, minValue, maxValue float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed < minValue || parsed > maxValue {
+		return fallback
+	}
+	return parsed
 }
