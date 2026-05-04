@@ -15,6 +15,7 @@ import (
 
 	"server-web/api"
 	"server-web/config"
+	eventbus "server-web/kafka"
 	"server-web/logger"
 	promclient "server-web/prometheus"
 	"server-web/pubsub"
@@ -68,6 +69,19 @@ func main() {
 		ConnMaxLifetime: cfg.RedisConnMaxLifetime,
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
+	var kafkaProducer *eventbus.Producer
+	if len(cfg.KafkaBrokers) > 0 {
+		producer, err := eventbus.NewProducer(cfg.KafkaBrokers)
+		if err != nil {
+			zap.L().Warn("kafka producer init failed; kafka events disabled",
+				zap.Strings("brokers", cfg.KafkaBrokers),
+				zap.Error(err),
+			)
+		} else {
+			kafkaProducer = producer
+			zap.L().Info("kafka producer initialized", zap.Strings("brokers", cfg.KafkaBrokers))
+		}
+	}
 	alertHub := pubsub.NewHub(64)
 	websocketHub := ws.NewHub(cfg.CORSOrigins)
 
@@ -167,6 +181,11 @@ func main() {
 	}
 	if err := redisClient.Close(); err != nil {
 		zap.L().Error("redis close failed", zap.Error(err))
+	}
+	if kafkaProducer != nil {
+		if err := kafkaProducer.Close(); err != nil {
+			zap.L().Warn("kafka producer close failed", zap.Error(err))
+		}
 	}
 
 	alertHub.Close()

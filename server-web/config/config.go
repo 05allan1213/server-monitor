@@ -39,6 +39,7 @@ type Config struct {
 	StaticDir                       string
 	TraceOTLPEndpoint               string
 	TraceSampleRate                 float64
+	KafkaBrokers                    []string
 }
 
 type RateLimitConfig struct {
@@ -86,6 +87,7 @@ func Load() Config {
 		StaticDir:            getEnv("STATIC_DIR", ""),
 		TraceOTLPEndpoint:    getEnvNonEmpty("TRACE_OTLP_ENDPOINT", ""),
 		TraceSampleRate:      getEnvFloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),
+		KafkaBrokers:         getEnvList("KAFKA_BROKERS"),
 	}
 }
 
