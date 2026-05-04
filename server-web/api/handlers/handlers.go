@@ -15,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	eventbus "server-web/kafka"
+	"server-web/logger"
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
 	"server-web/webhook"
@@ -34,9 +36,14 @@ type cacheClient interface {
 	Publish(ctx context.Context, channel string, message []byte) error
 }
 
+type alertProducer interface {
+	SendAlertEvent(eventbus.AlertEvent) error
+}
+
 type Handler struct {
 	promClient     *promclient.Client
 	cacheClient    cacheClient
+	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
 	hostsTTL       time.Duration
@@ -142,6 +149,7 @@ type Config struct {
 	DashboardTTL   time.Duration
 	DedupeTTL      time.Duration
 	CacheTimeout   time.Duration
+	AlertProducer  alertProducer
 }
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) (*Handler, error) {
@@ -151,6 +159,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 	return &Handler{
 		promClient:     promClient,
 		cacheClient:    cacheClient,
+		alertProducer:  cfg.AlertProducer,
 		readyTimeout:   cfg.ReadyTimeout,
 		requestTimeout: cfg.RequestTimeout,
 		hostsTTL:       cfg.HostsTTL,
@@ -489,11 +498,37 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 				zap.Error(err),
 			)
 		}
+		h.sendAlertEventToKafka(c.Request.Context(), alert, receivedAt)
 	}
 
 	c.JSON(http.StatusAccepted, response{
 		Status: "accepted",
 	})
+}
+
+func (h *Handler) sendAlertEventToKafka(ctx context.Context, alert webhook.AlertRecord, receivedAt time.Time) {
+	if h.alertProducer == nil {
+		return
+	}
+
+	event := eventbus.AlertEvent{
+		Type:         "alert",
+		Fingerprint:  alert.Fingerprint,
+		Status:       alert.Status,
+		Labels:       alert.Labels,
+		Annotations:  alert.Annotations,
+		StartsAt:     alert.StartsAt,
+		EndsAt:       alert.EndsAt,
+		GeneratorURL: alert.GeneratorURL,
+		ReceivedAt:   receivedAt,
+	}
+	if err := h.alertProducer.SendAlertEvent(event); err != nil {
+		logger.FromContext(ctx).Warn("kafka produce alert event failed",
+			zap.String("fingerprint", alert.Fingerprint),
+			zap.String("status", alert.Status),
+			zap.Error(err),
+		)
+	}
 }
 
 func (h *Handler) ActiveAlerts(c *gin.Context) {

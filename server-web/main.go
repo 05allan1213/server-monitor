@@ -125,7 +125,7 @@ func main() {
 
 	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout, cfg.HostsBroadcastInterval)
 
-	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub)
+	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub, kafkaProducer)
 	if err != nil {
 		zap.L().Error("create router failed", zap.Error(err))
 		os.Exit(1)
