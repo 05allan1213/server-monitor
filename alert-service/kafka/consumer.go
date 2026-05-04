@@ -22,8 +22,36 @@ type ConsumerObserver interface {
 const (
 	MessageProcessed    = "processed"
 	MessageInvalidJSON  = "invalid_json"
+	MessagePermanentErr = "permanent_error"
 	MessageProcessError = "process_error"
 )
+
+type permanentError struct {
+	err error
+}
+
+func (e permanentError) Error() string {
+	return e.err.Error()
+}
+
+func (e permanentError) Unwrap() error {
+	return e.err
+}
+
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsPermanent(err) {
+		return err
+	}
+	return permanentError{err: err}
+}
+
+func IsPermanent(err error) bool {
+	var target permanentError
+	return errors.As(err, &target)
+}
 
 type Consumer struct {
 	group   sarama.ConsumerGroup
@@ -124,6 +152,20 @@ type messageMarker interface {
 
 func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messageMarker, msg *sarama.ConsumerMessage) {
 	var event AlertEvent
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			zap.L().Error("process alert event panic recovered, skipping offset commit",
+				zap.String("topic", msg.Topic),
+				zap.Int32("partition", msg.Partition),
+				zap.Int64("offset", msg.Offset),
+				zap.String("fingerprint", event.Fingerprint),
+				zap.String("status", event.Status),
+				zap.Any("panic", recovered),
+			)
+			h.observe(MessageProcessError)
+		}
+	}()
+
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
 		zap.L().Warn("unmarshal alert event failed",
 			zap.String("topic", msg.Topic),
@@ -137,7 +179,24 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 	}
 
 	if err := h.processor.Process(ctx, event); err != nil {
+		if IsPermanent(err) {
+			zap.L().Warn("process alert event failed permanently, committing offset",
+				zap.String("topic", msg.Topic),
+				zap.Int32("partition", msg.Partition),
+				zap.Int64("offset", msg.Offset),
+				zap.String("fingerprint", event.Fingerprint),
+				zap.String("status", event.Status),
+				zap.Error(err),
+			)
+			h.observe(MessagePermanentErr)
+			marker.MarkMessage(msg, "")
+			return
+		}
+
 		zap.L().Error("process alert event failed, skipping offset commit",
+			zap.String("topic", msg.Topic),
+			zap.Int32("partition", msg.Partition),
+			zap.Int64("offset", msg.Offset),
 			zap.String("fingerprint", event.Fingerprint),
 			zap.String("status", event.Status),
 			zap.Error(err),

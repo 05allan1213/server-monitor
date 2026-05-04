@@ -67,7 +67,7 @@ func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
 	alertEvent := FromKafkaEvent(event)
 	if err := validateEvent(alertEvent); err != nil {
 		s.observe(alertEvent.Status, EventFailed)
-		return err
+		return kafka.Permanent(err)
 	}
 
 	dedupKey := DedupKey(alertEvent)
