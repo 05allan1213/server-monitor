@@ -190,6 +190,42 @@ services:
           memory: 128M
 
   # ------------------------------------------
+  # alert-service 告警事件消费与状态管理
+  # ------------------------------------------
+  alert-service:
+    build: ./alert-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      LISTEN_ADDR: ":8081"
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: alert-service
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-server-monitor-local-redis}
+      TRACE_OTLP_ENDPOINT: jaeger:4317
+      TRACE_SAMPLE_RATE: ${TRACE_SAMPLE_RATE:-1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      jaeger:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 128M
+
+  # ------------------------------------------
   # AlertManager 告警管理
   # ------------------------------------------
   alertmanager:
