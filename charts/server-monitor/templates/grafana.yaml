@@ -23,6 +23,17 @@ data:
         access: proxy
         url: http://prometheus:9090
         isDefault: true
+      - name: Elasticsearch
+        type: elasticsearch
+        access: proxy
+        url: http://elasticsearch:9200
+        database: sm-logs-*
+        jsonData:
+          timeField: ts
+          esVersion: "8.13.0"
+          logMessageField: msg
+          logLevelField: level
+        editable: true
 
 ---
 # ------------------------------------------
@@ -202,7 +213,9 @@ data:
         {"datasource": "Prometheus", "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "id": 2, "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"expr": "histogram_quantile(0.95, sum by (instance, le) (rate(http_request_duration_seconds_bucket{job=\"server-web\"}[5m])))", "legendFormat": "p95 {{ "{{" }}instance{{ "}}" }}", "refId": "A"}], "title": "P95 Latency", "type": "timeseries"},
         {"datasource": "Prometheus", "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "id": 3, "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"expr": "sum by (instance) (rate(http_requests_total{job=\"server-web\",status=~\"5..\"}[5m])) / sum by (instance) (rate(http_requests_total{job=\"server-web\"}[5m]))", "legendFormat": "{{ "{{" }}instance{{ "}}" }}", "refId": "A"}], "title": "5xx Error Ratio", "type": "timeseries"},
         {"datasource": "Prometheus", "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "id": 4, "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"expr": "websocket_connections_active{job=\"server-web\"}", "legendFormat": "{{ "{{" }}instance{{ "}}" }}", "refId": "A"}], "title": "Active WebSocket Connections", "type": "timeseries"},
-        {"datasource": "Prometheus", "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}, "id": 5, "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"expr": "sum by (path, status) (rate(http_requests_total{job=\"server-web\"}[5m]))", "legendFormat": "{{ "{{" }}status{{ "}}" }} {{ "{{" }}path{{ "}}" }}", "refId": "A"}], "title": "Request Rate by Path and Status", "type": "timeseries"}
+        {"datasource": "Prometheus", "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}, "id": 5, "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"expr": "sum by (path, status) (rate(http_requests_total{job=\"server-web\"}[5m]))", "legendFormat": "{{ "{{" }}status{{ "}}" }} {{ "{{" }}path{{ "}}" }}", "refId": "A"}], "title": "Request Rate by Path and Status", "type": "timeseries"},
+        {"datasource": "Elasticsearch", "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}, "id": 6, "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}}, "targets": [{"bucketAggs": [{"field": "ts", "id": "2", "settings": {"interval": "auto"}, "type": "date_histogram"}], "metrics": [{"id": "1", "type": "count"}], "query": "service:server-web OR service:server-probe", "refId": "A", "timeField": "ts"}], "title": "Log Volume", "type": "timeseries"},
+        {"datasource": "Elasticsearch", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}, "id": 7, "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true}, "targets": [{"query": "level:error OR level:warn", "refId": "A", "timeField": "ts"}], "title": "Warning and Error Logs", "type": "logs"}
       ],
       "refresh": "5s",
       "schemaVersion": 39,

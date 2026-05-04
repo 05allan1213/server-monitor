@@ -114,6 +114,7 @@ make docker-up
 8. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
 9. 打开 <http://localhost:5601>，创建 Data View：`sm-logs-*`，时间字段选择 `@timestamp`。
 10. 访问 <http://localhost:8080/healthz> 后，在 Kibana Discover 中按 `service: server-web` 或 `path: /healthz` 查询请求日志。
+11. 打开 <http://localhost:3000> 的 `Server Monitor Overview`，确认 `Log Volume` 和 `Warning and Error Logs` 面板已加载。
 
 ### 本地日志链路说明
 
@@ -139,6 +140,16 @@ curl -sf http://localhost:8080/healthz
 - Elasticsearch 是否健康：`curl -sf http://localhost:9200/_cluster/health`。
 
 Docker Desktop、WSL 或 rootless Docker 环境下，容器日志目录可能不是 `/var/lib/docker/containers`。此时需要按实际 Docker 日志路径调整 `fluent-bit` volume。
+
+Grafana 会自动 provision Elasticsearch 数据源：
+
+- 数据源名称：`Elasticsearch`
+- 索引：`sm-logs-*`
+- 时间字段：`ts`
+- 日志消息字段：`msg`
+- 日志级别字段：`level`
+
+如果修改了 Grafana datasource 或 dashboard 配置，需要重启 Grafana 容器或重新执行 `make docker-up` 才会重新加载 provisioning 文件。
 
 ### 开发模式
 
@@ -237,6 +248,8 @@ kubectl port-forward svc/kibana 5601:5601
 在 Kibana 中创建 Data View：`sm-logs-*`，时间字段选择 `@timestamp`。访问 `server-web /healthz` 后，应能按 `service: server-web`、`path: /healthz`、`kubernetes.namespace_name` 等字段查询日志。
 
 注意：Fluent Bit 创建了 ClusterRole / ClusterRoleBinding 读取 Pod 和 Namespace 元数据，安装 Chart 的账号需要集群级 RBAC 权限。不同 Kubernetes 发行版的容器日志路径可能不同，如无法采集日志，应先检查节点上的 `/var/log/containers` 和 Fluent Bit Pod 挂载。
+
+Helm Chart 也会在 Grafana provisioning 中新增 Elasticsearch 数据源，并在 `Service Monitor` Dashboard 中增加 `Log Volume` 与 `Warning and Error Logs` 面板。Grafana Pod 需要重启或重新部署后才会加载新的 provisioning 配置。
 
 ## Makefile 命令
 
