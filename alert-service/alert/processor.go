@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"alert-service/kafka"
 )
 
 const (
@@ -12,17 +14,7 @@ const (
 	StatusResolved = "resolved"
 )
 
-type Event struct {
-	Type         string            `json:"type"`
-	Fingerprint  string            `json:"fingerprint"`
-	Status       string            `json:"status"`
-	Labels       map[string]string `json:"labels"`
-	Annotations  map[string]string `json:"annotations"`
-	StartsAt     time.Time         `json:"startsAt"`
-	EndsAt       time.Time         `json:"endsAt"`
-	GeneratorURL string            `json:"generatorURL,omitempty"`
-	ReceivedAt   time.Time         `json:"receivedAt"`
-}
+type Event = kafka.AlertEvent
 
 func validateEvent(event Event) error {
 	if event.Fingerprint == "" {

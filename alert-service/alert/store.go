@@ -12,8 +12,10 @@ import (
 
 const (
 	RedisActiveAlertsKey = "alert:active"
-	RedisStatsKey        = "alert:stats"
-	DefaultDedupTTL      = 5 * time.Minute
+	// RedisStatsKey stores cumulative firing counts by alert name. Resolved
+	// events only clear active state; they do not decrement these counters.
+	RedisStatsKey   = "alert:stats"
+	DefaultDedupTTL = 5 * time.Minute
 )
 
 type RedisClient interface {
@@ -65,33 +67,32 @@ func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
 		return errors.New("redis client is required")
 	}
 
-	alertEvent := FromKafkaEvent(event)
-	if err := validateEvent(alertEvent); err != nil {
-		s.observe(alertEvent.Status, EventFailed)
+	if err := validateEvent(event); err != nil {
+		s.observe(event.Status, EventFailed)
 		return kafka.Permanent(err)
 	}
 
-	dedupKey := DedupKey(alertEvent)
+	dedupKey := DedupKey(event)
 	ok, err := s.client.SetNX(ctx, dedupKey, []byte("1"), s.dedupTTL)
 	if err != nil {
-		s.observe(alertEvent.Status, EventFailed)
+		s.observe(event.Status, EventFailed)
 		return fmt.Errorf("set alert dedup key: %w", err)
 	}
 	if !ok {
-		s.observe(alertEvent.Status, EventDeduped)
+		s.observe(event.Status, EventDeduped)
 		return nil
 	}
 
-	if err := s.apply(ctx, alertEvent); err != nil {
+	if err := s.apply(ctx, event); err != nil {
 		rollbackErr := s.client.Del(ctx, dedupKey)
 		if rollbackErr != nil {
-			s.observe(alertEvent.Status, EventFailed)
+			s.observe(event.Status, EventFailed)
 			return fmt.Errorf("%w; rollback alert dedup key: %v", err, rollbackErr)
 		}
-		s.observe(alertEvent.Status, EventFailed)
+		s.observe(event.Status, EventFailed)
 		return err
 	}
-	s.observe(alertEvent.Status, EventStored)
+	s.observe(event.Status, EventStored)
 	return nil
 }
 
@@ -143,19 +144,5 @@ func normalizeStatus(status string) string {
 		return status
 	default:
 		return "unknown"
-	}
-}
-
-func FromKafkaEvent(event kafka.AlertEvent) Event {
-	return Event{
-		Type:         event.Type,
-		Fingerprint:  event.Fingerprint,
-		Status:       event.Status,
-		Labels:       event.Labels,
-		Annotations:  event.Annotations,
-		StartsAt:     event.StartsAt,
-		EndsAt:       event.EndsAt,
-		GeneratorURL: event.GeneratorURL,
-		ReceivedAt:   event.ReceivedAt,
 	}
 }

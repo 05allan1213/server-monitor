@@ -1,0 +1,13 @@
+.git
+.gitignore
+docs/
+charts/
+k8s/
+alert-service/
+server-probe/
+docker/
+*_test.go
+*.md
+*.out
+coverage.*
+profile.cov
