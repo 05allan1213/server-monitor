@@ -16,6 +16,7 @@ import (
 	"alert-service/health"
 	"alert-service/kafka"
 	"alert-service/logger"
+	servicemetrics "alert-service/metrics"
 	redisstore "alert-service/redis"
 	"alert-service/tracer"
 )
@@ -68,16 +69,19 @@ func main() {
 		}
 	}()
 
-	store := alert.NewStore(redisClient, alert.DefaultDedupTTL)
+	serviceMetrics := servicemetrics.New()
+	store := alert.NewStore(redisClient, alert.DefaultDedupTTL, serviceMetrics)
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, store)
 	if err != nil {
 		zap.L().Fatal("kafka consumer init failed", zap.Error(err))
 	}
+	consumer.SetObserver(serviceMetrics)
 
 	healthHandler := health.NewHandler(redisClient, readinessTimeout)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/readyz", healthHandler.Readyz)
+	mux.Handle("/metrics", serviceMetrics.HTTPHandler())
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -98,10 +102,12 @@ func main() {
 		if err := consumer.Consume(ctx,
 			func() {
 				healthHandler.SetKafkaReady(true)
+				serviceMetrics.SetKafkaReady(true)
 				zap.L().Info("kafka consumer ready", zap.Strings("brokers", cfg.KafkaBrokers), zap.String("group_id", cfg.KafkaGroupID))
 			},
 			func() {
 				healthHandler.SetKafkaReady(false)
+				serviceMetrics.SetKafkaReady(false)
 			},
 		); err != nil && ctx.Err() == nil {
 			consumerErr <- err
@@ -134,6 +140,7 @@ func main() {
 	zap.L().Info("alert-service shutting down")
 	cancel()
 	healthHandler.SetKafkaReady(false)
+	serviceMetrics.SetKafkaReady(false)
 	if err := consumer.Close(); err != nil {
 		zap.L().Warn("kafka consumer close failed", zap.Error(err))
 	}

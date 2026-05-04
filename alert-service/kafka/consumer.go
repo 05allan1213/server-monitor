@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -13,6 +14,16 @@ import (
 type AlertProcessor interface {
 	Process(ctx context.Context, event AlertEvent) error
 }
+
+type ConsumerObserver interface {
+	ObserveKafkaMessage(result string)
+}
+
+const (
+	MessageProcessed    = "processed"
+	MessageInvalidJSON  = "invalid_json"
+	MessageProcessError = "process_error"
+)
 
 type Consumer struct {
 	group   sarama.ConsumerGroup
@@ -73,8 +84,19 @@ func (c *Consumer) Close() error {
 
 type consumerGroupHandler struct {
 	processor  AlertProcessor
+	observer   ConsumerObserver
+	observerMu sync.RWMutex
 	onReady    func()
 	onNotReady func()
+}
+
+func (c *Consumer) SetObserver(observer ConsumerObserver) {
+	if c == nil || c.handler == nil {
+		return
+	}
+	c.handler.observerMu.Lock()
+	defer c.handler.observerMu.Unlock()
+	c.handler.observer = observer
 }
 
 func (h *consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
@@ -109,6 +131,7 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 			zap.Int64("offset", msg.Offset),
 			zap.Error(err),
 		)
+		h.observe(MessageInvalidJSON)
 		marker.MarkMessage(msg, "")
 		return
 	}
@@ -119,9 +142,11 @@ func (h *consumerGroupHandler) processMessage(ctx context.Context, marker messag
 			zap.String("status", event.Status),
 			zap.Error(err),
 		)
+		h.observe(MessageProcessError)
 		return
 	}
 
+	h.observe(MessageProcessed)
 	marker.MarkMessage(msg, "")
 }
 
@@ -129,4 +154,14 @@ func (h *consumerGroupHandler) notifyNotReady() {
 	if h.onNotReady != nil {
 		h.onNotReady()
 	}
+}
+
+func (h *consumerGroupHandler) observe(result string) {
+	h.observerMu.RLock()
+	observer := h.observer
+	h.observerMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	observer.ObserveKafkaMessage(result)
 }

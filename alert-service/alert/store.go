@@ -24,21 +24,36 @@ type RedisClient interface {
 	Del(ctx context.Context, key string) error
 }
 
+type StoreObserver interface {
+	ObserveAlertEvent(status, result string)
+}
+
+const (
+	EventStored  = "stored"
+	EventDeduped = "deduped"
+	EventFailed  = "failed"
+)
+
 type Store struct {
 	client   RedisClient
 	dedupTTL time.Duration
+	observer StoreObserver
 }
 
 var _ kafka.AlertProcessor = (*Store)(nil)
 
-func NewStore(client RedisClient, dedupTTL time.Duration) *Store {
+func NewStore(client RedisClient, dedupTTL time.Duration, observers ...StoreObserver) *Store {
 	if dedupTTL <= 0 {
 		dedupTTL = DefaultDedupTTL
 	}
-	return &Store{
+	store := &Store{
 		client:   client,
 		dedupTTL: dedupTTL,
 	}
+	if len(observers) > 0 {
+		store.observer = observers[0]
+	}
+	return store
 }
 
 func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
@@ -51,25 +66,31 @@ func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
 
 	alertEvent := FromKafkaEvent(event)
 	if err := validateEvent(alertEvent); err != nil {
+		s.observe(alertEvent.Status, EventFailed)
 		return err
 	}
 
 	dedupKey := DedupKey(alertEvent)
 	ok, err := s.client.SetNX(ctx, dedupKey, []byte("1"), s.dedupTTL)
 	if err != nil {
+		s.observe(alertEvent.Status, EventFailed)
 		return fmt.Errorf("set alert dedup key: %w", err)
 	}
 	if !ok {
+		s.observe(alertEvent.Status, EventDeduped)
 		return nil
 	}
 
 	if err := s.apply(ctx, alertEvent); err != nil {
 		rollbackErr := s.client.Del(ctx, dedupKey)
 		if rollbackErr != nil {
+			s.observe(alertEvent.Status, EventFailed)
 			return fmt.Errorf("%w; rollback alert dedup key: %v", err, rollbackErr)
 		}
+		s.observe(alertEvent.Status, EventFailed)
 		return err
 	}
+	s.observe(alertEvent.Status, EventStored)
 	return nil
 }
 
@@ -97,6 +118,22 @@ func (s *Store) apply(ctx context.Context, event Event) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) observe(status, result string) {
+	if s == nil || s.observer == nil {
+		return
+	}
+	s.observer.ObserveAlertEvent(normalizeStatus(status), result)
+}
+
+func normalizeStatus(status string) string {
+	switch status {
+	case StatusFiring, StatusResolved:
+		return status
+	default:
+		return "unknown"
+	}
 }
 
 func FromKafkaEvent(event kafka.AlertEvent) Event {

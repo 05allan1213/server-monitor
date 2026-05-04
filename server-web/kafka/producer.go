@@ -30,9 +30,22 @@ type asyncProducer interface {
 	Close() error
 }
 
+type ProducerObserver interface {
+	ObserveKafkaAlertEvent(result string)
+}
+
+const (
+	AlertEventQueued      = "queued"
+	AlertEventDropped     = "dropped"
+	AlertEventSendSuccess = "send_success"
+	AlertEventSendError   = "send_error"
+)
+
 type Producer struct {
-	producer asyncProducer
-	wg       sync.WaitGroup
+	producer   asyncProducer
+	observer   ProducerObserver
+	observerMu sync.RWMutex
+	wg         sync.WaitGroup
 }
 
 func NewProducer(brokers []string) (*Producer, error) {
@@ -65,6 +78,15 @@ func newProducer(producer asyncProducer) *Producer {
 	return p
 }
 
+func (p *Producer) SetObserver(observer ProducerObserver) {
+	if p == nil {
+		return
+	}
+	p.observerMu.Lock()
+	defer p.observerMu.Unlock()
+	p.observer = observer
+}
+
 func (p *Producer) SendAlertEvent(event AlertEvent) error {
 	if p == nil || p.producer == nil {
 		return errors.New("kafka producer is not initialized")
@@ -86,8 +108,10 @@ func (p *Producer) SendAlertEvent(event AlertEvent) error {
 
 	select {
 	case p.producer.Input() <- msg:
+		p.observe(AlertEventQueued)
 		return nil
 	default:
+		p.observe(AlertEventDropped)
 		return errors.New("kafka producer channel full, dropping alert event")
 	}
 }
@@ -110,6 +134,7 @@ func (p *Producer) handleSuccesses() {
 			zap.Int32("partition", msg.Partition),
 			zap.Int64("offset", msg.Offset),
 		)
+		p.observe(AlertEventSendSuccess)
 	}
 }
 
@@ -121,5 +146,19 @@ func (p *Producer) handleErrors() {
 			fields = append(fields, zap.String("topic", producerErr.Msg.Topic))
 		}
 		zap.L().Warn("kafka produce failed", fields...)
+		p.observe(AlertEventSendError)
 	}
+}
+
+func (p *Producer) observe(result string) {
+	if p == nil {
+		return
+	}
+	p.observerMu.RLock()
+	observer := p.observer
+	p.observerMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	observer.ObserveKafkaAlertEvent(result)
 }

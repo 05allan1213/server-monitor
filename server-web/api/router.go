@@ -24,6 +24,9 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	if websocketHub != nil {
 		websocketHub.SetConnectionObserver(metrics.SetWebSocketConnections)
 	}
+	if alertProducer != nil {
+		alertProducer.SetObserver(metrics)
+	}
 	router.Use(
 		middleware.CORS(cfg.CORSOrigins),
 		otelgin.Middleware("server-web"),

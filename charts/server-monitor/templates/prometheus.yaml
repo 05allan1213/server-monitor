@@ -76,6 +76,29 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
 
+      {{- if .Values.alertService.enabled }}
+      - job_name: 'alert-service'
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              own_namespace: true
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: alert-service
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: ${1}:8081
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      {{- end }}
+
     {{- if .Values.victoriametrics.enabled }}
     remote_write:
       - url: http://victoriametrics:8428/api/v1/write
