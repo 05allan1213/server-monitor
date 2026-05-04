@@ -174,6 +174,28 @@ services:
           memory: 2G
 
   # ------------------------------------------
+  # Elasticsearch 日志索引初始化
+  # ------------------------------------------
+  elasticsearch-init:
+    image: curlimages/curl:8.8.0
+    restart: "no"
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ILM_POLICY_NAME: sm-logs-policy
+      INDEX_TEMPLATE_NAME: sm-logs-template
+    volumes:
+      - ./docker/elasticsearch:/init:ro
+    entrypoint: ["/bin/sh", "/init/init.sh"]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 64M
+
+  # ------------------------------------------
   # Kibana 日志查询
   # ------------------------------------------
   kibana:
@@ -209,8 +231,8 @@ services:
       - ./docker/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
       - /var/lib/docker/containers:/var/log/docker:ro
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      elasticsearch-init:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:

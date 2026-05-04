@@ -151,6 +151,22 @@ Grafana 会自动 provision Elasticsearch 数据源：
 
 如果修改了 Grafana datasource 或 dashboard 配置，需要重启 Grafana 容器或重新执行 `make docker-up` 才会重新加载 provisioning 文件。
 
+Elasticsearch 初始化由 `elasticsearch-init` 一次性服务完成：
+
+- ILM policy：`sm-logs-policy`，默认 30 天后删除日志索引。
+- Index template：`sm-logs-template`，匹配 `sm-logs-*`。
+- 预留字段：`trace_id`、`span_id`，供后续链路追踪阶段使用。
+
+验证初始化：
+
+```bash
+docker compose run --rm elasticsearch-init
+curl -sf http://localhost:9200/_ilm/policy/sm-logs-policy
+curl -sf http://localhost:9200/_index_template/sm-logs-template
+```
+
+注意：index template 只影响后续新建索引，不会自动修改已经存在的旧索引。
+
 ### 开发模式
 
 ```bash
@@ -250,6 +266,24 @@ kubectl port-forward svc/kibana 5601:5601
 注意：Fluent Bit 创建了 ClusterRole / ClusterRoleBinding 读取 Pod 和 Namespace 元数据，安装 Chart 的账号需要集群级 RBAC 权限。不同 Kubernetes 发行版的容器日志路径可能不同，如无法采集日志，应先检查节点上的 `/var/log/containers` 和 Fluent Bit Pod 挂载。
 
 Helm Chart 也会在 Grafana provisioning 中新增 Elasticsearch 数据源，并在 `Service Monitor` Dashboard 中增加 `Log Volume` 与 `Warning and Error Logs` 面板。Grafana Pod 需要重启或重新部署后才会加载新的 provisioning 配置。
+
+Helm Chart 会通过 `elasticsearch-init` Job 初始化 `sm-logs-policy` 和 `sm-logs-template`。默认保留期在 `charts/server-monitor/values.yaml` 中配置：
+
+```yaml
+elasticsearch:
+  init:
+    enabled: true
+    retentionDays: 30
+```
+
+验证初始化：
+
+```bash
+kubectl get job elasticsearch-init
+kubectl logs job/elasticsearch-init
+kubectl exec statefulset/elasticsearch -- curl -sf http://127.0.0.1:9200/_ilm/policy/sm-logs-policy
+kubectl exec statefulset/elasticsearch -- curl -sf http://127.0.0.1:9200/_index_template/sm-logs-template
+```
 
 ## Makefile 命令
 
