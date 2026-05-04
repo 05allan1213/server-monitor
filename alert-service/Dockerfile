@@ -17,11 +17,15 @@ RUN CGO_ENABLED=0 go build -o alert-service .
 # ============================================
 FROM alpine:3.19
 
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata \
+	&& addgroup -S app \
+	&& adduser -S -G app app
 
 WORKDIR /app
 
 COPY --from=builder /app/alert-service .
+
+USER app
 
 EXPOSE 8081
 
