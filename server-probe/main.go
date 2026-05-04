@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,9 +17,17 @@ import (
 
 	"server-probe/collector"
 	"server-probe/config"
+	"server-probe/logger"
 )
 
 func main() {
+	log, err := logger.Init("server-probe")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync(log)
+
 	cfg := config.Load()
 	if err := applyHostPaths(cfg); err != nil {
 		slog.Error("apply host paths failed", "error", err)

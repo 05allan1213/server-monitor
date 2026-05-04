@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"server-web/api"
 	"server-web/config"
+	"server-web/logger"
 	promclient "server-web/prometheus"
 	"server-web/pubsub"
 	rediscache "server-web/redis"
@@ -26,6 +28,13 @@ type wsMessage struct {
 }
 
 func main() {
+	log, err := logger.Init("server-web")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync(log)
+
 	cfg := config.Load()
 	gin.SetMode(cfg.GinMode)
 
