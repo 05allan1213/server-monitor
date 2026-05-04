@@ -1,15 +1,16 @@
 package middleware
 
 import (
-	"log/slog"
 	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const requestIDHeader = "X-Request-ID"
+const requestIDKey = "request_id"
 
 var requestIDCounter uint64
 
@@ -20,6 +21,7 @@ func Logging() gin.HandlerFunc {
 		if requestID == "" {
 			requestID = newRequestID(start)
 		}
+		c.Set(requestIDKey, requestID)
 		c.Header(requestIDHeader, requestID)
 
 		c.Next()
@@ -29,15 +31,28 @@ func Logging() gin.HandlerFunc {
 			path = c.Request.URL.Path
 		}
 
-		slog.Info("http request",
-			"request_id", requestID,
-			"method", c.Request.Method,
-			"path", path,
-			"status", c.Writer.Status(),
-			"latency", time.Since(start).String(),
-			"client_ip", c.ClientIP(),
+		latency := time.Since(start)
+		zap.L().Info("http request",
+			zap.String("request_id", requestID),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.Int("status", c.Writer.Status()),
+			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
+			zap.String("client_ip", c.ClientIP()),
 		)
 	}
+}
+
+func RequestID(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if value, ok := c.Get(requestIDKey); ok {
+		if requestID, ok := value.(string); ok {
+			return requestID
+		}
+	}
+	return c.GetHeader(requestIDHeader)
 }
 
 func newRequestID(now time.Time) string {

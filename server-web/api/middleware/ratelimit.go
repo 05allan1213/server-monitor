@@ -3,12 +3,12 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"server-web/config"
 	rediscache "server-web/redis"
@@ -47,7 +47,10 @@ func RateLimit(store rateLimitStore, cfg config.RateLimitConfig) gin.HandlerFunc
 
 		allowed, remaining, err := store.AllowSlidingWindow(ctx, key, cfg.Requests, cfg.Window, time.Now().UTC())
 		if err != nil {
-			slog.Warn("rate limit check failed", "key", key, "error", err)
+			zap.L().Warn("rate limit check failed",
+				zap.String("key", key),
+				zap.Error(err),
+			)
 			c.Next()
 			return
 		}

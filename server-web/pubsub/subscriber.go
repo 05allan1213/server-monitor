@@ -3,9 +3,10 @@ package pubsub
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/rand/v2"
 	"time"
+
+	"go.uber.org/zap"
 
 	rediscache "server-web/redis"
 )
@@ -43,7 +44,11 @@ func (s *Subscriber) Run(ctx context.Context) {
 		}
 
 		waitDelay := withJitter(delay)
-		slog.Warn("subscribe failed, reconnecting", "channel", s.channel, "error", err, "delay", waitDelay)
+		zap.L().Warn("subscribe failed, reconnecting",
+			zap.String("channel", s.channel),
+			zap.Error(err),
+			zap.Duration("delay", waitDelay),
+		)
 
 		select {
 		case <-ctx.Done():

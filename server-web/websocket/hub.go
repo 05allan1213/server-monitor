@@ -3,7 +3,6 @@ package websocket
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 const (
@@ -89,7 +89,7 @@ func (h *Hub) Run(ctx context.Context) {
 func (h *Hub) broadcastMessage(message []byte) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("websocket hub: recovered panic during broadcast", "error", r)
+			zap.L().Warn("websocket hub recovered panic during broadcast", zap.Any("error", r))
 		}
 	}()
 
@@ -97,7 +97,7 @@ func (h *Hub) broadcastMessage(message []byte) {
 		select {
 		case client.send <- message:
 		default:
-			slog.Warn("websocket hub: client send buffer full, disconnecting")
+			zap.L().Warn("websocket hub client send buffer full, disconnecting")
 			delete(h.clients, client)
 			close(client.send)
 			h.observeConnections()
@@ -131,7 +131,7 @@ func (h *Hub) Broadcast(message []byte) {
 		return
 	case h.broadcast <- message:
 	default:
-		slog.Warn("websocket hub: broadcast channel full, message dropped")
+		zap.L().Warn("websocket hub broadcast channel full, message dropped")
 	}
 }
 
@@ -228,7 +228,7 @@ func (c *Client) readPump() {
 		select {
 		case c.hub.unregister <- c:
 		default:
-			slog.Warn("websocket hub: unregister channel full, client may leak")
+			zap.L().Warn("websocket hub unregister channel full, client may leak")
 		}
 		c.conn.Close()
 	}()

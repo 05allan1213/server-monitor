@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 var (
@@ -82,7 +82,10 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, bool) {
 	value, err := c.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if err != redis.Nil {
-			slog.Error("redis get failed", "key", key, "error", err)
+			zap.L().Error("redis get failed",
+				zap.String("key", key),
+				zap.Error(err),
+			)
 		}
 		return nil, false
 	}
@@ -242,7 +245,10 @@ func (c *Client) XRevRangeN(ctx context.Context, key string, count int64) ([]str
 	for _, message := range messages {
 		raw, ok := message.Values[AlertEventPayload]
 		if !ok {
-			slog.Warn("skip alert event stream message without payload", "key", key, "id", message.ID)
+			zap.L().Warn("skip alert event stream message without payload",
+				zap.String("key", key),
+				zap.String("id", message.ID),
+			)
 			continue
 		}
 
@@ -252,7 +258,10 @@ func (c *Client) XRevRangeN(ctx context.Context, key string, count int64) ([]str
 		case []byte:
 			values = append(values, string(value))
 		default:
-			slog.Warn("skip alert event stream message with invalid payload", "key", key, "id", message.ID)
+			zap.L().Warn("skip alert event stream message with invalid payload",
+				zap.String("key", key),
+				zap.String("id", message.ID),
+			)
 		}
 	}
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
@@ -483,7 +483,11 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, event); err != nil {
 			// Active state and history are already stored; failing the webhook here
 			// would trigger retries and duplicate history entries.
-			slog.Warn("publish alert event failed", "fingerprint", alert.Fingerprint, "status", alert.Status, "error", err)
+			zap.L().Warn("publish alert event failed",
+				zap.String("fingerprint", alert.Fingerprint),
+				zap.String("status", alert.Status),
+				zap.Error(err),
+			)
 		}
 	}
 
@@ -572,7 +576,7 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	}
 
 	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
-		slog.Warn("websocket upgrade failed", "error", err)
+		zap.L().Warn("websocket upgrade failed", zap.Error(err))
 	}
 }
 
@@ -601,12 +605,12 @@ func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
 
 	value, err := json.Marshal(hosts)
 	if err != nil {
-		slog.Error("cache hosts marshal failed", "error", err)
+		zap.L().Error("cache hosts marshal failed", zap.Error(err))
 		return
 	}
 
 	if err := h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL); err != nil {
-		slog.Error("cache hosts set failed", "error", err)
+		zap.L().Error("cache hosts set failed", zap.Error(err))
 	}
 }
 
@@ -635,12 +639,12 @@ func (h *Handler) cacheDashboardOverview(ctx context.Context, overview dashboard
 
 	value, err := json.Marshal(overview)
 	if err != nil {
-		slog.Error("cache dashboard overview marshal failed", "error", err)
+		zap.L().Error("cache dashboard overview marshal failed", zap.Error(err))
 		return
 	}
 
 	if err := h.cacheClient.Set(ctx, rediscache.DashboardOverviewKey, value, h.dashboardTTL); err != nil {
-		slog.Error("cache dashboard overview set failed", "error", err)
+		zap.L().Error("cache dashboard overview set failed", zap.Error(err))
 	}
 }
 
@@ -651,7 +655,7 @@ func (h *Handler) countActiveAlerts(ctx context.Context) (int, bool) {
 
 	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
 	if err != nil {
-		slog.Warn("dashboard overview active alerts degraded", "error", err)
+		zap.L().Warn("dashboard overview active alerts degraded", zap.Error(err))
 		return 0, true
 	}
 
@@ -663,7 +667,7 @@ func decodeActiveAlerts(values map[string]string) []webhook.AlertRecord {
 	for _, value := range values {
 		var alert webhook.AlertRecord
 		if err := json.Unmarshal([]byte(value), &alert); err != nil {
-			slog.Warn("skip corrupted alert data", "error", err)
+			zap.L().Warn("skip corrupted alert data", zap.Error(err))
 			continue
 		}
 		alerts = append(alerts, alert)
@@ -677,7 +681,7 @@ func decodeAlertEvents(values []string) []webhook.AlertEvent {
 	for _, value := range values {
 		var event webhook.AlertEvent
 		if err := json.Unmarshal([]byte(value), &event); err != nil {
-			slog.Warn("skip corrupted alert event", "error", err)
+			zap.L().Warn("skip corrupted alert event", zap.Error(err))
 			continue
 		}
 		events = append(events, event)

@@ -25,7 +25,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.Use(
 		middleware.CORS(cfg.CORSOrigins),
 		middleware.Logging(),
-		gin.Recovery(),
+		middleware.Recovery(),
 		metrics.Handler(),
 		middleware.RateLimit(cacheClient, cfg.RateLimit),
 	)

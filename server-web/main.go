@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"server-web/api"
 	"server-web/config"
@@ -61,7 +61,10 @@ func main() {
 	if redisClient.Enabled() {
 		pingCtx, pingCancel := context.WithTimeout(context.Background(), cfg.RedisStartupTimeout)
 		if err := redisClient.Ping(pingCtx); err != nil {
-			slog.Error("redis ping failed at startup", "addr", cfg.RedisAddr, "error", err)
+			zap.L().Error("redis ping failed at startup",
+				zap.String("addr", cfg.RedisAddr),
+				zap.Error(err),
+			)
 		}
 		pingCancel()
 
@@ -82,7 +85,7 @@ func main() {
 				if ctx.Err() != nil {
 					return
 				}
-				slog.Warn("broadcast alert failed", "error", err)
+				zap.L().Warn("broadcast alert failed", zap.Error(err))
 			}
 		}
 	}()
@@ -91,7 +94,7 @@ func main() {
 
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub)
 	if err != nil {
-		slog.Error("create router failed", "error", err)
+		zap.L().Error("create router failed", zap.Error(err))
 		os.Exit(1)
 	}
 
@@ -106,7 +109,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		slog.Info("server-web listening", "addr", cfg.ListenAddr)
+		zap.L().Info("server-web listening", zap.String("addr", cfg.ListenAddr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
@@ -118,18 +121,18 @@ func main() {
 	exitCode := 0
 	select {
 	case sig := <-quit:
-		slog.Info("server-web received shutdown signal", "signal", sig.String())
+		zap.L().Info("server-web received shutdown signal", zap.String("signal", sig.String()))
 	case err := <-serverErr:
 		exitCode = 1
-		slog.Error("server-web exited", "error", err)
+		zap.L().Error("server-web exited", zap.Error(err))
 	}
 
-	slog.Info("server-web shutting down...")
+	zap.L().Info("server-web shutting down")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("server-web shutdown error", "error", err)
+		zap.L().Error("server-web shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
@@ -138,13 +141,13 @@ func main() {
 		<-subscriberDone
 	}
 	if err := redisClient.Close(); err != nil {
-		slog.Error("redis close failed", "error", err)
+		zap.L().Error("redis close failed", zap.Error(err))
 	}
 
 	alertHub.Close()
 	<-alertHubConsumers
 
-	slog.Info("server-web stopped")
+	zap.L().Info("server-web stopped")
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -163,13 +166,13 @@ func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.
 			hosts, err := promClient.GetHosts(queryCtx)
 			cancel()
 			if err != nil {
-				slog.Warn("broadcast hosts query failed", "error", err)
+				zap.L().Warn("broadcast hosts query failed", zap.Error(err))
 				continue
 			}
 
 			payload, err := json.Marshal(wsMessage{Type: "hosts", Data: hosts})
 			if err != nil {
-				slog.Warn("broadcast hosts marshal failed", "error", err)
+				zap.L().Warn("broadcast hosts marshal failed", zap.Error(err))
 				continue
 			}
 
