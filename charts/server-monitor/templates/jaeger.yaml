@@ -1,0 +1,70 @@
+{{- if .Values.jaeger.enabled }}
+# ============================================
+# Jaeger 链路追踪
+# ============================================
+# 接收 OTLP Trace，提供 Jaeger UI 查询
+# ============================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: jaeger
+          image: {{ .Values.jaeger.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with .Values.global.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: ui
+              containerPort: 16686
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+          resources:
+            {{- toYaml .Values.jaeger.resources | nindent 12 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  labels:
+    {{- include "server-monitor.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: jaeger
+  ports:
+    - name: ui
+      port: {{ .Values.jaeger.service.uiPort }}
+      targetPort: 16686
+      {{- if eq .Values.jaeger.service.type "NodePort" }}
+      nodePort: {{ .Values.jaeger.service.uiNodePort }}
+      {{- end }}
+    - name: otlp-grpc
+      port: {{ .Values.jaeger.service.otlpGrpcPort }}
+      targetPort: 4317
+    - name: otlp-http
+      port: {{ .Values.jaeger.service.otlpHttpPort }}
+      targetPort: 4318
+  type: {{ .Values.jaeger.service.type }}
+{{- end }}

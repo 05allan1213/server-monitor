@@ -132,6 +132,16 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: HOSTS_CACHE_TTL_SECONDS
+            - name: TRACE_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_OTLP_ENDPOINT
+            - name: TRACE_SAMPLE_RATE
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_SAMPLE_RATE
 
 ---
 # ------------------------------------------

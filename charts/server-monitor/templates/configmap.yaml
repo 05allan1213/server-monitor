@@ -23,6 +23,8 @@ data:
   READY_TIMEOUT_SECONDS: {{ .Values.config.readyTimeoutSeconds | quote }}
   REQUEST_TIMEOUT_SECONDS: {{ .Values.config.requestTimeoutSeconds | quote }}
   HOSTS_CACHE_TTL_SECONDS: {{ .Values.config.hostsCacheTTLSeconds | quote }}
+  TRACE_OTLP_ENDPOINT: {{ .Values.config.traceOtlpEndpoint | quote }}
+  TRACE_SAMPLE_RATE: {{ .Values.config.traceSampleRate | quote }}
   PROBE_LISTEN_ADDR: {{ .Values.serverProbe.listenAddr | quote }}
   PROBE_METRICS_PATH: {{ .Values.serverProbe.metricsPath | quote }}
   PROBE_SCRAPE_INTERVAL: {{ .Values.serverProbe.scrapeInterval | quote }}
