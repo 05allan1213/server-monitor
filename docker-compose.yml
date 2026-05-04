@@ -50,6 +50,7 @@ services:
       - "9090:9090"
     environment:
       LISTEN_ADDR: ":9090"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/healthz"]
       interval: 10s
@@ -146,6 +147,77 @@ services:
           memory: 256M
 
   # ------------------------------------------
+  # Elasticsearch 日志存储
+  # ------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      cluster.name: sm-logs
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 2G
+
+  # ------------------------------------------
+  # Kibana 日志查询
+  # ------------------------------------------
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.0
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:5601/api/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+  # ------------------------------------------
+  # Fluent Bit 日志采集
+  # ------------------------------------------
+  fluent-bit:
+    image: fluent/fluent-bit:3.1.4
+    restart: unless-stopped
+    volumes:
+      - ./docker/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./docker/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - /var/lib/docker/containers:/var/log/docker:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 128M
+
+  # ------------------------------------------
   # server-web Web 展示服务
   # ------------------------------------------
   server-web:
@@ -164,6 +236,7 @@ services:
       RATE_LIMIT_REQUESTS: "120"
       RATE_LIMIT_WINDOW_SECONDS: "60"
       GIN_MODE: release
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       redis:
         condition: service_healthy
@@ -187,3 +260,4 @@ volumes:
   redis-data:
   prometheus-data:
   grafana-data:
+  elasticsearch-data:

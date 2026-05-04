@@ -8,6 +8,7 @@
 
 ```
 server-probe → Prometheus → AlertManager → server-web webhook → Redis Pub/Sub → WebSocket → 前端大屏
+server-probe/server-web stdout → Fluent Bit → Elasticsearch → Kibana
 ```
 
 **当前能力：**
@@ -17,6 +18,7 @@ server-probe → Prometheus → AlertManager → server-web webhook → Redis Pu
 - 最近告警事件查询
 - 告警 WebSocket 实时推送
 - Docker Compose 一键启动与联调
+- Docker Compose 本地日志链路，支持 Kibana 查询结构化 JSON 日志
 
 **技术要点：**
 
@@ -27,6 +29,7 @@ server-probe → Prometheus → AlertManager → server-web webhook → Redis Pu
 - WebSocket 实时推送（主机指标 + 告警）
 - Vue 3 + TypeScript 暗色监控大屏
 - Grafana Provisioning 自动加载 Prometheus 数据源和基础大盘
+- Fluent Bit + Elasticsearch + Kibana 本地日志查询链路
 - Docker / Kubernetes 部署
 
 ## 架构
@@ -63,7 +66,9 @@ make docker-up
 说明：
 - `server-web` 容器会同时托管前端静态文件
 - Grafana 地址为 <http://localhost:3000>，默认账号为 `admin`，默认密码为 `server-monitor-local-grafana`
+- Kibana 地址为 <http://localhost:5601>，用于查询 `sm-logs-*` 日志索引
 - 首次启动后，Prometheus 抓取和告警规则加载通常需要 `15-30` 秒
+- Elasticsearch / Kibana 首次启动通常更慢，日志链路可查询前需要等待服务健康和 Fluent Bit 完成采集
 - 如果刚启动就访问 `/readyz`，短时间内返回未就绪是正常现象
 
 ### 方式二：开发模式（推荐开发阶段使用）
@@ -107,6 +112,33 @@ make docker-up
 6. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
 7. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
 8. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
+9. 打开 <http://localhost:5601>，创建 Data View：`sm-logs-*`，时间字段选择 `@timestamp`。
+10. 访问 <http://localhost:8080/healthz> 后，在 Kibana Discover 中按 `service: server-web` 或 `path: /healthz` 查询请求日志。
+
+### 本地日志链路说明
+
+Docker Compose 模式会启动 Elasticsearch、Kibana 和 Fluent Bit：
+
+- Elasticsearch：<http://localhost:9200>，单节点开发模式，关闭安全认证。
+- Kibana：<http://localhost:5601>，用于查询 `sm-logs-*`。
+- Fluent Bit：挂载 `/var/lib/docker/containers`，解析 Docker JSON 外层和应用 JSON 内层。
+
+常用验证命令：
+
+```bash
+docker compose config
+docker compose ps elasticsearch kibana fluent-bit
+curl -sf http://localhost:9200/_cluster/health
+curl -sf http://localhost:8080/healthz
+```
+
+如果 Fluent Bit 没有采集到日志，优先检查：
+
+- 当前 Docker 环境是否能把宿主机 `/var/lib/docker/containers` 挂载进容器。
+- `docker compose logs fluent-bit` 是否有 parser、tail 或 Elasticsearch output 错误。
+- Elasticsearch 是否健康：`curl -sf http://localhost:9200/_cluster/health`。
+
+Docker Desktop、WSL 或 rootless Docker 环境下，容器日志目录可能不是 `/var/lib/docker/containers`。此时需要按实际 Docker 日志路径调整 `fluent-bit` volume。
 
 ### 开发模式
 
@@ -231,7 +263,8 @@ server-monitor/
 ├── docker/                # Docker Compose 专用配置
 │   ├── prometheus.yml     # Prometheus 采集配置
 │   ├── alertmanager.yml   # AlertManager 配置
-│   └── alerts.yml         # 告警规则
+│   ├── alerts.yml         # 告警规则
+│   └── fluent-bit/        # Docker Compose 日志采集配置
 ├── k8s/                   # Kubernetes 部署清单
 ├── docker-compose.yml     # Docker Compose 编排
 ├── Makefile               # 常用命令
@@ -253,6 +286,8 @@ server-monitor/
 | Prometheus   | 9091 | `/`                               | Prometheus 控制台    |
 | AlertManager | 9093 | `/`                               | AlertManager 控制台  |
 | Grafana      | 3000 | `/`                               | Grafana 大盘        |
+| Elasticsearch| 9200 | `/_cluster/health`                | 日志索引存储          |
+| Kibana       | 5601 | `/`                               | 日志查询              |
 
 ## 环境变量
 
@@ -263,6 +298,7 @@ server-monitor/
 | `LISTEN_ADDR`     | `:9090`  | 监听地址      |
 | `SCRAPE_INTERVAL` | `5`      | 采集间隔（秒）   |
 | `METRICS_PATH`    | `/metrics` | 指标路径      |
+| `LOG_LEVEL`       | `info`     | JSON 日志级别：debug / info / warn / error |
 
 ### server-web
 
@@ -299,6 +335,7 @@ server-monitor/
 | `REDIS_CONN_MAX_IDLE_TIME_SECONDS` | `300`           | Redis 空闲连接最长保留时间（秒） |
 | `STATIC_DIR`              | (空)                      | 前端静态文件目录   |
 | `GIN_MODE`                | `debug`                  | Gin 模式      |
+| `LOG_LEVEL`               | `info`                   | JSON 日志级别：debug / info / warn / error |
 
 补充说明：
 - Docker Compose 部署时，`server-web` 镜像内默认使用 `STATIC_DIR=/app/static`
@@ -318,4 +355,5 @@ server-monitor/
 - Vue 3 + TypeScript + Vite（前端）
 - Redis 7（缓存 + Pub/Sub）
 - Prometheus + AlertManager
+- Fluent Bit + Elasticsearch + Kibana
 - Docker / Kubernetes

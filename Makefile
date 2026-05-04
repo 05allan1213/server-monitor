@@ -75,6 +75,8 @@ docker-up:
 	@echo "  Prometheus:   http://localhost:9091"
 	@echo "  AlertManager: http://localhost:9093"
 	@echo "  Grafana:      http://localhost:3000"
+	@echo "  Elasticsearch:http://localhost:9200"
+	@echo "  Kibana:       http://localhost:5601"
 	@echo "提示: 首次启动后等待 15-30 秒，再访问 /readyz 或前端页面"
 
 docker-down:
