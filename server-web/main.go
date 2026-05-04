@@ -19,6 +19,7 @@ import (
 	promclient "server-web/prometheus"
 	"server-web/pubsub"
 	rediscache "server-web/redis"
+	"server-web/tracer"
 	ws "server-web/websocket"
 )
 
@@ -36,6 +37,24 @@ func main() {
 	defer logger.Sync(log)
 
 	cfg := config.Load()
+	shutdownTracer, err := tracer.Init(context.Background(), tracer.Config{
+		ServiceName:  "server-web",
+		OTLPEndpoint: cfg.TraceOTLPEndpoint,
+		SampleRate:   cfg.TraceSampleRate,
+	})
+	if err != nil {
+		zap.L().Warn("tracer init failed; tracing disabled",
+			zap.String("endpoint", cfg.TraceOTLPEndpoint),
+			zap.Error(err),
+		)
+		shutdownTracer = func(context.Context) error { return nil }
+	} else if cfg.TraceOTLPEndpoint != "" {
+		zap.L().Info("tracer initialized",
+			zap.String("endpoint", cfg.TraceOTLPEndpoint),
+			zap.Float64("sample_rate", cfg.TraceSampleRate),
+		)
+	}
+
 	gin.SetMode(cfg.GinMode)
 
 	prometheusClient := promclient.NewClient(cfg.PrometheusURL, cfg.RequestTimeout)
@@ -135,6 +154,12 @@ func main() {
 		zap.L().Error("server-web shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
+
+	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	if err := shutdownTracer(traceShutdownCtx); err != nil {
+		zap.L().Warn("tracer shutdown failed", zap.Error(err))
+	}
+	traceShutdownCancel()
 
 	cancel()
 	if subscriberDone != nil {

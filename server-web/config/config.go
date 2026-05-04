@@ -37,6 +37,8 @@ type Config struct {
 	RedisConnMaxLifetime            time.Duration
 	RedisConnMaxIdleTime            time.Duration
 	StaticDir                       string
+	TraceOTLPEndpoint               string
+	TraceSampleRate                 float64
 }
 
 type RateLimitConfig struct {
@@ -82,12 +84,22 @@ func Load() Config {
 		RedisConnMaxLifetime: getEnvDurationSeconds("REDIS_CONN_MAX_LIFETIME_SECONDS", 1800),
 		RedisConnMaxIdleTime: getEnvDurationSeconds("REDIS_CONN_MAX_IDLE_TIME_SECONDS", 300),
 		StaticDir:            getEnv("STATIC_DIR", ""),
+		TraceOTLPEndpoint:    getEnvNonEmpty("TRACE_OTLP_ENDPOINT", ""),
+		TraceSampleRate:      getEnvFloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),
 	}
 }
 
 func getEnv(key, fallback string) string {
 	value, exists := os.LookupEnv(key)
 	if !exists {
+		return fallback
+	}
+	return value
+}
+
+func getEnvNonEmpty(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
 		return fallback
 	}
 	return value
@@ -123,6 +135,18 @@ func getEnvDurationSeconds(key string, fallback int) time.Duration {
 
 func getEnvDurationMilliseconds(key string, fallback int) time.Duration {
 	return time.Duration(getEnvPositiveInt(key, fallback)) * time.Millisecond
+}
+
+func getEnvFloatRange(key string, fallback, minValue, maxValue float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed < minValue || parsed > maxValue {
+		return fallback
+	}
+	return parsed
 }
 
 func getEnvBool(key string, fallback bool) bool {
