@@ -29,10 +29,10 @@ datasources:
       esVersion: "8.13.0"
       logMessageField: msg
       logLevelField: level
-      logsToTraces:
-        datasourceUid: jaeger
-        spanIdField: span_id
-        traceIdField: trace_id
+      dataLinks:
+        - datasourceUid: jaeger
+          field: trace_id
+          url: "$${__value.raw}"
     editable: true
   - name: Jaeger
     uid: jaeger
@@ -42,15 +42,4 @@ datasources:
     jsonData:
       tracesToMetrics:
         datasourceUid: prometheus
-      tracesToLogsV2:
-        datasourceUid: elasticsearch
-        spanStartTimeShift: "-1h"
-        spanEndTimeShift: "1h"
-        filterByTraceID: true
-        filterBySpanID: false
-        customQuery: true
-        query: "trace_id:\"$${traceId}\""
-        tags:
-          - key: service
-            value: service
     editable: true
