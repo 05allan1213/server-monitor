@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+
+	"server-web/logger"
 )
 
 const requestIDHeader = "X-Request-ID"
@@ -32,7 +34,7 @@ func Logging() gin.HandlerFunc {
 		}
 
 		latency := time.Since(start)
-		zap.L().Info("http request",
+		logger.FromContext(c.Request.Context()).Info("http request",
 			zap.String("request_id", requestID),
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
