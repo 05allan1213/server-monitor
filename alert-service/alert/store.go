@@ -19,12 +19,8 @@ const (
 )
 
 type RedisClient interface {
-	SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
-	HGet(ctx context.Context, key, field string) ([]byte, bool, error)
-	HSet(ctx context.Context, key, field string, value []byte) error
-	HDel(ctx context.Context, key, field string) error
-	HIncrBy(ctx context.Context, key, field string, incr int64) error
-	Del(ctx context.Context, key string) error
+	ApplyFiringEvent(ctx context.Context, dedupKey string, ttl time.Duration, fingerprint string, payload []byte, statsField string) (bool, error)
+	ApplyResolvedEvent(ctx context.Context, dedupKey string, ttl time.Duration, fingerprint string) (bool, error)
 }
 
 type StoreObserver interface {
@@ -66,69 +62,42 @@ func (s *Store) Process(ctx context.Context, event kafka.AlertEvent) error {
 	if s.client == nil {
 		return errors.New("redis client is required")
 	}
-
 	if err := validateEvent(event); err != nil {
 		s.observe(event.Status, EventFailed)
 		return kafka.Permanent(err)
 	}
 
 	dedupKey := DedupKey(event)
-	ok, err := s.client.SetNX(ctx, dedupKey, []byte("1"), s.dedupTTL)
-	if err != nil {
-		s.observe(event.Status, EventFailed)
-		return fmt.Errorf("set alert dedup key: %w", err)
-	}
-	if !ok {
-		s.observe(event.Status, EventDeduped)
-		return nil
-	}
-
-	if err := s.apply(ctx, event); err != nil {
-		rollbackErr := s.client.Del(ctx, dedupKey)
-		if rollbackErr != nil {
-			s.observe(event.Status, EventFailed)
-			return fmt.Errorf("%w; rollback alert dedup key: %v", err, rollbackErr)
-		}
-		s.observe(event.Status, EventFailed)
-		return err
-	}
-	s.observe(event.Status, EventStored)
-	return nil
-}
-
-func (s *Store) apply(ctx context.Context, event Event) error {
 	switch event.Status {
 	case StatusFiring:
 		payload, err := json.Marshal(event)
 		if err != nil {
+			s.observe(event.Status, EventFailed)
 			return fmt.Errorf("marshal active alert: %w", err)
 		}
-		previousValue, existed, err := s.client.HGet(ctx, RedisActiveAlertsKey, event.Fingerprint)
+		stored, err := s.client.ApplyFiringEvent(ctx, dedupKey, s.dedupTTL, event.Fingerprint, payload, alertNameOrFallback(event))
 		if err != nil {
-			return fmt.Errorf("load previous active alert: %w", err)
+			s.observe(event.Status, EventFailed)
+			return err
 		}
-		if err := s.client.HSet(ctx, RedisActiveAlertsKey, event.Fingerprint, payload); err != nil {
-			return fmt.Errorf("store active alert: %w", err)
-		}
-		if err := s.client.HIncrBy(ctx, RedisStatsKey, alertNameOrFallback(event), 1); err != nil {
-			if rollbackErr := rollbackActiveAlert(ctx, s.client, event.Fingerprint, previousValue, existed); rollbackErr != nil {
-				return fmt.Errorf("increment alert stats: %w; rollback active alert: %v", err, rollbackErr)
-			}
-			return fmt.Errorf("increment alert stats: %w", err)
+		if !stored {
+			s.observe(event.Status, EventDeduped)
+			return nil
 		}
 	case StatusResolved:
-		if err := s.client.HDel(ctx, RedisActiveAlertsKey, event.Fingerprint); err != nil {
-			return fmt.Errorf("delete active alert: %w", err)
+		stored, err := s.client.ApplyResolvedEvent(ctx, dedupKey, s.dedupTTL, event.Fingerprint)
+		if err != nil {
+			s.observe(event.Status, EventFailed)
+			return err
+		}
+		if !stored {
+			s.observe(event.Status, EventDeduped)
+			return nil
 		}
 	}
-	return nil
-}
 
-func rollbackActiveAlert(ctx context.Context, client RedisClient, fingerprint string, previousValue []byte, existed bool) error {
-	if existed {
-		return client.HSet(ctx, RedisActiveAlertsKey, fingerprint, previousValue)
-	}
-	return client.HDel(ctx, RedisActiveAlertsKey, fingerprint)
+	s.observe(event.Status, EventStored)
+	return nil
 }
 
 func (s *Store) observe(status, result string) {

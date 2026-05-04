@@ -3,6 +3,7 @@ package redisstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -23,6 +24,51 @@ type Options struct {
 	ConnMaxLifetime time.Duration
 	ConnMaxIdleTime time.Duration
 }
+
+var applyFiringEventScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 1 then
+	return 0
+end
+
+local previous = redis.call("HGET", KEYS[2], ARGV[3])
+local hsetResult = redis.pcall("HSET", KEYS[2], ARGV[3], ARGV[4])
+if type(hsetResult) == "table" and hsetResult.err then
+	return redis.error_reply("store active alert: " .. hsetResult.err)
+end
+
+local hincrResult = redis.pcall("HINCRBY", KEYS[3], ARGV[5], 1)
+if type(hincrResult) == "table" and hincrResult.err then
+	if previous then
+		local restoreResult = redis.pcall("HSET", KEYS[2], ARGV[3], previous)
+		if type(restoreResult) == "table" and restoreResult.err then
+			return redis.error_reply("increment alert stats: " .. hincrResult.err .. "; rollback active alert: " .. restoreResult.err)
+		end
+	else
+		local deleteResult = redis.pcall("HDEL", KEYS[2], ARGV[3])
+		if type(deleteResult) == "table" and deleteResult.err then
+			return redis.error_reply("increment alert stats: " .. hincrResult.err .. "; rollback active alert: " .. deleteResult.err)
+		end
+	end
+	return redis.error_reply("increment alert stats: " .. hincrResult.err)
+end
+
+redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+return 1
+`)
+
+var applyResolvedEventScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 1 then
+	return 0
+end
+
+local hdelResult = redis.pcall("HDEL", KEYS[2], ARGV[3])
+if type(hdelResult) == "table" and hdelResult.err then
+	return redis.error_reply("delete active alert: " .. hdelResult.err)
+end
+
+redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+return 1
+`)
 
 func NewClient(options Options) *Client {
 	if options.Addr == "" {
@@ -62,52 +108,47 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.client.Ping(ctx).Err()
 }
 
-func (c *Client) SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+func (c *Client) ApplyFiringEvent(ctx context.Context, dedupKey string, ttl time.Duration, fingerprint string, payload []byte, statsField string) (bool, error) {
 	if !c.Enabled() {
 		return false, errors.New("redis is not enabled")
 	}
-	return c.client.SetNX(ctx, key, value, ttl).Result()
+	result, err := applyFiringEventScript.Run(ctx, c.client,
+		[]string{dedupKey, "alert:active", "alert:stats"},
+		"1",
+		ttl.Milliseconds(),
+		fingerprint,
+		string(payload),
+		statsField,
+	).Result()
+	if err != nil {
+		return false, err
+	}
+	return scriptStored(result)
 }
 
-func (c *Client) HSet(ctx context.Context, key, field string, value []byte) error {
+func (c *Client) ApplyResolvedEvent(ctx context.Context, dedupKey string, ttl time.Duration, fingerprint string) (bool, error) {
 	if !c.Enabled() {
-		return errors.New("redis is not enabled")
+		return false, errors.New("redis is not enabled")
 	}
-	return c.client.HSet(ctx, key, field, value).Err()
+	result, err := applyResolvedEventScript.Run(ctx, c.client,
+		[]string{dedupKey, "alert:active"},
+		"1",
+		ttl.Milliseconds(),
+		fingerprint,
+	).Result()
+	if err != nil {
+		return false, err
+	}
+	return scriptStored(result)
 }
 
-func (c *Client) HGet(ctx context.Context, key, field string) ([]byte, bool, error) {
-	if !c.Enabled() {
-		return nil, false, errors.New("redis is not enabled")
+func scriptStored(result interface{}) (bool, error) {
+	switch value := result.(type) {
+	case int64:
+		return value == 1, nil
+	case uint64:
+		return value == 1, nil
+	default:
+		return false, fmt.Errorf("unexpected redis script result %T", result)
 	}
-
-	value, err := c.client.HGet(ctx, key, field).Bytes()
-	if err == nil {
-		return value, true, nil
-	}
-	if errors.Is(err, redis.Nil) {
-		return nil, false, nil
-	}
-	return nil, false, err
-}
-
-func (c *Client) HDel(ctx context.Context, key, field string) error {
-	if !c.Enabled() {
-		return errors.New("redis is not enabled")
-	}
-	return c.client.HDel(ctx, key, field).Err()
-}
-
-func (c *Client) HIncrBy(ctx context.Context, key, field string, incr int64) error {
-	if !c.Enabled() {
-		return errors.New("redis is not enabled")
-	}
-	return c.client.HIncrBy(ctx, key, field, incr).Err()
-}
-
-func (c *Client) Del(ctx context.Context, key string) error {
-	if !c.Enabled() {
-		return errors.New("redis is not enabled")
-	}
-	return c.client.Del(ctx, key).Err()
 }
