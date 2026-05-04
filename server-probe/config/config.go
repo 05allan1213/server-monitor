@@ -1,11 +1,12 @@
 package config
 
 import (
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type Config struct {
@@ -43,7 +44,7 @@ func Load() Config {
 func getHostname() string {
 	h, err := os.Hostname()
 	if err != nil {
-		slog.Warn("hostname lookup failed", "error", err)
+		zap.L().Warn("hostname lookup failed", zap.Error(err))
 	}
 	if h != "" {
 		return h

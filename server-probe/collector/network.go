@@ -2,10 +2,10 @@ package collector
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
 	gopsnet "github.com/shirou/gopsutil/v3/net"
+	"go.uber.org/zap"
 )
 
 type NetworkCollector struct {
@@ -69,7 +69,11 @@ func (c *NetworkCollector) addCounterDelta(counter *prometheus.CounterVec, previ
 		return
 	}
 	if current < last {
-		slog.Warn("network counter reset detected", "interface", label, "previous", last, "current", current)
+		zap.L().Warn("network counter reset detected",
+			zap.String("interface", label),
+			zap.Uint64("previous", last),
+			zap.Uint64("current", current),
+		)
 		counter.WithLabelValues(c.hostname, label).Add(float64(current))
 		return
 	}

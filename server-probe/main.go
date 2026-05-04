@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 
 	"server-probe/collector"
 	"server-probe/config"
@@ -30,7 +30,7 @@ func main() {
 
 	cfg := config.Load()
 	if err := applyHostPaths(cfg); err != nil {
-		slog.Error("apply host paths failed", "error", err)
+		zap.L().Error("apply host paths failed", zap.Error(err))
 		os.Exit(1)
 	}
 
@@ -77,14 +77,14 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(`{"healthy":true}`)); err != nil {
-			slog.Error("healthz response write failed", "error", err)
+			zap.L().Error("healthz response write failed", zap.Error(err))
 		}
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(`{"ready":true}`)); err != nil {
-			slog.Error("readyz response write failed", "error", err)
+			zap.L().Error("readyz response write failed", zap.Error(err))
 		}
 	})
 
@@ -98,7 +98,10 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		slog.Info("server-probe listening", "addr", cfg.ListenAddr, "metrics_path", cfg.MetricsPath)
+		zap.L().Info("server-probe listening",
+			zap.String("addr", cfg.ListenAddr),
+			zap.String("metrics_path", cfg.MetricsPath),
+		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
@@ -111,9 +114,9 @@ func main() {
 	exitCode := 0
 	select {
 	case sig := <-quit:
-		slog.Info("server-probe shutting down...", "signal", sig.String())
+		zap.L().Info("server-probe shutting down", zap.String("signal", sig.String()))
 	case err := <-serverErr:
-		slog.Error("server-probe exited", "error", err)
+		zap.L().Error("server-probe exited", zap.Error(err))
 		exitCode = 1
 	}
 
@@ -122,11 +125,11 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("server-probe shutdown error", "error", err)
+		zap.L().Error("server-probe shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
-	slog.Info("server-probe stopped")
+	zap.L().Info("server-probe stopped")
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -148,7 +151,10 @@ func updateCollectors(ctx context.Context, collectors []collector.Collector) {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
-				slog.Error("collector update failed", "collector", c.Name(), "error", err)
+				zap.L().Error("collector update failed",
+					zap.String("collector", c.Name()),
+					zap.Error(err),
+				)
 			}
 		}(c)
 	}
@@ -201,11 +207,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		slog.Info("http request completed",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", status,
-			"latency", time.Since(start),
+		latency := time.Since(start)
+		zap.L().Info("http request completed",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", status),
+			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
 		)
 	})
 }
@@ -214,10 +221,10 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				slog.Error("http request panic recovered",
-					"method", r.Method,
-					"path", r.URL.Path,
-					"error", recovered,
+				zap.L().Error("http request panic recovered",
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.Any("error", recovered),
 				)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}

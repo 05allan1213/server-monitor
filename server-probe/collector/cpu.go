@@ -2,11 +2,11 @@ package collector
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/cpu"
+	"go.uber.org/zap"
 )
 
 type CPUCollector struct {
@@ -47,7 +47,7 @@ func (c *CPUCollector) Update(ctx context.Context) error {
 		return err
 	}
 	if len(percentages) == 0 {
-		slog.Warn("collector cpu: cpu.Percent returned empty slice")
+		zap.L().Warn("collector cpu percent returned empty slice")
 		return nil
 	}
 

@@ -3,11 +3,11 @@ package collector
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/v3/disk"
+	"go.uber.org/zap"
 )
 
 type DiskCollector struct {
@@ -77,7 +77,10 @@ func (c *DiskCollector) Update(ctx context.Context) error {
 			}
 			usage, err := disk.Usage(partition.Mountpoint)
 			if err != nil {
-				slog.Warn("disk usage collect failed", "mountpoint", partition.Mountpoint, "error", err)
+				zap.L().Warn("disk usage collect failed",
+					zap.String("mountpoint", partition.Mountpoint),
+					zap.Error(err),
+				)
 				errs = append(errs, err)
 				continue
 			}
@@ -115,7 +118,11 @@ func (c *DiskCollector) addCounterDelta(counter *prometheus.CounterVec, previous
 		return
 	}
 	if current < last {
-		slog.Warn("disk counter reset detected", "device", label, "previous", last, "current", current)
+		zap.L().Warn("disk counter reset detected",
+			zap.String("device", label),
+			zap.Uint64("previous", last),
+			zap.Uint64("current", current),
+		)
 		counter.WithLabelValues(c.hostname, label).Add(float64(current))
 		return
 	}
