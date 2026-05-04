@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,6 +27,7 @@ const (
 	redisReadTimeout  = 2 * time.Second
 	redisWriteTimeout = 2 * time.Second
 	readinessTimeout  = time.Second
+	shutdownPhases    = 3
 )
 
 func main() {
@@ -85,7 +87,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
+		Handler:           loggingMiddleware(recoveryMiddleware(mux)),
 		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
 		ReadTimeout:       cfg.HTTPReadTimeout,
 		WriteTimeout:      cfg.HTTPWriteTimeout,
@@ -141,22 +143,25 @@ func main() {
 	cancel()
 	healthHandler.SetKafkaReady(false)
 	serviceMetrics.SetKafkaReady(false)
+	consumerShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
 	if err := consumer.Close(); err != nil {
 		zap.L().Warn("kafka consumer close failed", zap.Error(err))
 	}
 	select {
 	case <-consumerDone:
-	case <-time.After(cfg.ShutdownTimeout):
+	case <-time.After(consumerShutdownTimeout):
 		zap.L().Warn("kafka consumer shutdown timed out")
 	}
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	serverShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		zap.L().Error("alert-service shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	traceShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
+	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), traceShutdownTimeout)
 	if err := shutdownTracer(traceShutdownCtx); err != nil {
 		zap.L().Warn("tracer shutdown failed", zap.Error(err))
 	}
@@ -166,4 +171,82 @@ func main() {
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(body []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(body)
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
+		zap.L().Info("http request completed",
+			zap.String("module", "http"),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", status),
+			zap.Float64("latency_ms", float64(time.Since(start).Microseconds())/1000),
+			zap.String("client_ip", r.RemoteAddr),
+		)
+	})
+}
+
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				zap.L().Error("http request panic recovered",
+					zap.String("module", "http"),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.Any("error", recovered),
+				)
+				writeErrorJSON(w, http.StatusInternalServerError)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func writeErrorJSON(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status": "error",
+		"error":  http.StatusText(status),
+	})
+}
+
+func phaseTimeout(total time.Duration, phases int) time.Duration {
+	if total <= 0 || phases <= 1 {
+		return total
+	}
+
+	perPhase := total / time.Duration(phases)
+	if perPhase <= 0 {
+		return total
+	}
+	return perPhase
 }
