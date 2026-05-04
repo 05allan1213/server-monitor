@@ -196,6 +196,48 @@ make dev-frontend
 
 这意味着如果要使用 Ingress，需要确保 Ingress Controller 不额外改写这些路径。
 
+### Helm 日志链路
+
+Helm Chart 在第二阶段会部署 Kubernetes 版日志链路：
+
+- Elasticsearch：单节点 StatefulSet，Service 名称 `elasticsearch`，默认关闭安全认证，仅用于学习/开发环境。
+- Kibana：Deployment，Service 名称 `kibana`，默认 NodePort `30561`。
+- Fluent Bit：DaemonSet，每个 Node 一个 Pod，采集 `/var/log/containers/*.log`，按 CRI 格式解析并通过 Kubernetes filter 添加 Pod 元数据。
+
+默认开关位于 `charts/server-monitor/values.yaml`：
+
+```yaml
+elasticsearch:
+  enabled: true
+kibana:
+  enabled: true
+fluentBit:
+  enabled: true
+config:
+  logLevel: info
+```
+
+验证渲染：
+
+```bash
+helm lint charts/server-monitor
+helm template server-monitor charts/server-monitor > /tmp/server-monitor-rendered.yaml
+kubectl apply --dry-run=client -f /tmp/server-monitor-rendered.yaml
+```
+
+部署后验证：
+
+```bash
+kubectl get pods
+kubectl get daemonset fluent-bit
+kubectl logs daemonset/fluent-bit
+kubectl port-forward svc/kibana 5601:5601
+```
+
+在 Kibana 中创建 Data View：`sm-logs-*`，时间字段选择 `@timestamp`。访问 `server-web /healthz` 后，应能按 `service: server-web`、`path: /healthz`、`kubernetes.namespace_name` 等字段查询日志。
+
+注意：Fluent Bit 创建了 ClusterRole / ClusterRoleBinding 读取 Pod 和 Namespace 元数据，安装 Chart 的账号需要集群级 RBAC 权限。不同 Kubernetes 发行版的容器日志路径可能不同，如无法采集日志，应先检查节点上的 `/var/log/containers` 和 Fluent Bit Pod 挂载。
+
 ## Makefile 命令
 
 ```bash

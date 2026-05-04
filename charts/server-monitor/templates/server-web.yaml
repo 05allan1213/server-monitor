@@ -72,6 +72,11 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: LOG_LEVEL
             - name: PROMETHEUS_URL
               valueFrom:
                 configMapKeyRef:
