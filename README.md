@@ -122,7 +122,7 @@ Docker Compose 模式会启动 Elasticsearch、Kibana 和 Fluent Bit：
 
 - Elasticsearch：<http://localhost:9200>，单节点开发模式，关闭安全认证。
 - Kibana：<http://localhost:5601>，用于查询 `sm-logs-*`。
-- Fluent Bit：挂载 `/var/lib/docker/containers`，解析 Docker JSON 外层和应用 JSON 内层。
+- Fluent Bit：默认挂载 `/var/lib/docker/containers`，解析 Docker JSON 外层和应用 JSON 内层。
 
 常用验证命令：
 
@@ -135,11 +135,11 @@ curl -sf http://localhost:8080/healthz
 
 如果 Fluent Bit 没有采集到日志，优先检查：
 
-- 当前 Docker 环境是否能把宿主机 `/var/lib/docker/containers` 挂载进容器。
+- 当前 Docker 环境是否能把宿主机 Docker 容器日志目录挂载进容器。
 - `docker compose logs fluent-bit` 是否有 parser、tail 或 Elasticsearch output 错误。
 - Elasticsearch 是否健康：`curl -sf http://localhost:9200/_cluster/health`。
 
-Docker Desktop、WSL 或 rootless Docker 环境下，容器日志目录可能不是 `/var/lib/docker/containers`。此时需要按实际 Docker 日志路径调整 `fluent-bit` volume。
+Docker Desktop、WSL 或 rootless Docker 环境下，容器日志目录可能不是 `/var/lib/docker/containers`。此时可以通过 `DOCKER_CONTAINER_LOG_PATH` 覆盖宿主机路径，例如 `DOCKER_CONTAINER_LOG_PATH=/data/docker/containers make docker-up`。
 
 Grafana 会自动 provision Elasticsearch 数据源：
 

@@ -45,7 +45,7 @@ data:
         Name                es
         Match               *
         Host                elasticsearch
-        Port                9200
+        Port                {{ .Values.elasticsearch.service.port }}
         Logstash_Format     On
         Logstash_Prefix     sm-logs
         Logstash_DateFormat %Y.%m.%d
@@ -150,6 +150,7 @@ spec:
         - name: var-log
           hostPath:
             path: {{ .Values.fluentBit.hostLogPath | quote }}
+            type: Directory
         - name: docker-containers
           hostPath:
             path: {{ .Values.fluentBit.hostDockerContainersPath | quote }}

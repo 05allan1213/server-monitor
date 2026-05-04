@@ -218,7 +218,7 @@ services:
       resources:
         limits:
           cpus: "0.50"
-          memory: 512M
+          memory: 1G
 
   # ------------------------------------------
   # Fluent Bit 日志采集
@@ -229,7 +229,7 @@ services:
     volumes:
       - ./docker/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - ./docker/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
-      - /var/lib/docker/containers:/var/log/docker:ro
+      - ${DOCKER_CONTAINER_LOG_PATH:-/var/lib/docker/containers}:/var/log/docker:ro
     depends_on:
       elasticsearch-init:
         condition: service_completed_successfully

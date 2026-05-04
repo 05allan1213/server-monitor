@@ -193,7 +193,10 @@ func appendSlogAttr(fields []zap.Field, groups []string, attr slog.Attr) []zap.F
 	case slog.KindTime:
 		return append(fields, zap.Time(key, attr.Value.Time()))
 	case slog.KindGroup:
-		nextGroups := append(append([]string{}, groups...), attr.Key)
+		nextGroups := groups
+		if attr.Key != "" {
+			nextGroups = append(append([]string{}, groups...), attr.Key)
+		}
 		for _, child := range attr.Value.Group() {
 			fields = appendSlogAttr(fields, nextGroups, child)
 		}

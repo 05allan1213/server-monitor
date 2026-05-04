@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,6 +21,12 @@ import (
 	"server-probe/config"
 	"server-probe/logger"
 )
+
+const requestIDHeader = "X-Request-ID"
+
+type requestIDContextKey struct{}
+
+var requestIDCounter uint64
 
 func main() {
 	log, err := logger.Init("server-probe")
@@ -200,6 +208,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		recorder := &statusResponseWriter{ResponseWriter: w}
+		requestID := r.Header.Get(requestIDHeader)
+		if requestID == "" {
+			requestID = newRequestID(start)
+		}
+		recorder.Header().Set(requestIDHeader, requestID)
+		r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, requestID))
 
 		next.ServeHTTP(recorder, r)
 
@@ -209,12 +223,29 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		}
 		latency := time.Since(start)
 		zap.L().Info("http request completed",
+			zap.String("request_id", requestID),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", status),
 			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
+			zap.String("client_ip", r.RemoteAddr),
 		)
 	})
+}
+
+func newRequestID(now time.Time) string {
+	seq := atomic.AddUint64(&requestIDCounter, 1)
+	return strconv.FormatInt(now.UnixNano(), 36) + "-" + strconv.FormatUint(seq, 36)
+}
+
+func requestIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if value, ok := r.Context().Value(requestIDContextKey{}).(string); ok {
+		return value
+	}
+	return r.Header.Get(requestIDHeader)
 }
 
 func recoveryMiddleware(next http.Handler) http.Handler {
@@ -222,6 +253,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				zap.L().Error("http request panic recovered",
+					zap.String("request_id", requestIDFromRequest(r)),
 					zap.String("method", r.Method),
 					zap.String("path", r.URL.Path),
 					zap.Any("error", recovered),
