@@ -145,7 +145,7 @@ Grafana 会自动 provision Elasticsearch 数据源：
 
 - 数据源名称：`Elasticsearch`
 - 索引：`sm-logs-*`
-- 时间字段：`ts`
+- 时间字段：`@timestamp`
 - 日志消息字段：`msg`
 - 日志级别字段：`level`
 

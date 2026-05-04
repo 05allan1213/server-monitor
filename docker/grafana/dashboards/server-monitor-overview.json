@@ -334,7 +334,7 @@
         {
           "bucketAggs": [
             {
-              "field": "ts",
+              "field": "@timestamp",
               "id": "2",
               "settings": {
                 "interval": "auto"
@@ -350,7 +350,7 @@
           ],
           "query": "service:server-web OR service:server-probe",
           "refId": "A",
-          "timeField": "ts"
+          "timeField": "@timestamp"
         }
       ],
       "title": "Log Volume",
@@ -379,7 +379,7 @@
         {
           "query": "level:error OR level:warn",
           "refId": "A",
-          "timeField": "ts"
+          "timeField": "@timestamp"
         }
       ],
       "title": "Warning and Error Logs",

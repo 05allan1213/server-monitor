@@ -13,7 +13,7 @@ datasources:
     url: http://elasticsearch:9200
     database: sm-logs-*
     jsonData:
-      timeField: ts
+      timeField: "@timestamp"
       esVersion: "8.13.0"
       logMessageField: msg
       logLevelField: level
