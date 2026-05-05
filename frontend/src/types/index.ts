@@ -27,6 +27,18 @@ export interface Host {
   lastScrape: string;
 }
 
+export interface AuthUser {
+  id: number;
+  username: string;
+  role: "admin" | "viewer" | string;
+}
+
+export interface LoginResponse {
+  token: string;
+  expires_at: string;
+  user: AuthUser;
+}
+
 export interface RangePoint {
   timestamp: string;
   value: number;

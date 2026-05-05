@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { RouterLink, RouterView } from "vue-router";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 
 import { useAlertsWebSocket } from "./composables/useAlertsWebSocket";
+import { useAuthStore } from "./stores/auth";
 import { useMonitorStore } from "./stores/monitor";
 
 const monitor = useMonitorStore();
+const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const beijingTime = ref("");
 const beijingTimer = ref<number | null>(null);
 const updateAgoTimer = ref<number | null>(null);
 const isFullscreen = ref(false);
 const fullscreenError = ref("");
+const liveDataStarted = ref(false);
 
 const { connectionState, connect, disconnect } = useAlertsWebSocket(
   monitor.applyIncomingAlert,
@@ -27,6 +32,9 @@ const connectionLabel = computed(() => {
       return "离线";
   }
 });
+
+const isPublicRoute = computed(() => Boolean(route.meta.public));
+const shouldUseLiveData = computed(() => !isPublicRoute.value && auth.isAuthenticated);
 
 watch(
   () => monitor.alerts.length,
@@ -87,9 +95,42 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
+function startLiveData() {
+  if (liveDataStarted.value) {
+    return;
+  }
   monitor.refreshAll();
   connect();
+  liveDataStarted.value = true;
+}
+
+function stopLiveData() {
+  if (!liveDataStarted.value) {
+    return;
+  }
+  disconnect();
+  liveDataStarted.value = false;
+}
+
+async function logout() {
+  auth.logout();
+  stopLiveData();
+  await router.push("/login");
+}
+
+watch(
+  shouldUseLiveData,
+  (enabled) => {
+    if (enabled) {
+      startLiveData();
+    } else {
+      stopLiveData();
+    }
+  },
+  { immediate: true },
+);
+
+onMounted(() => {
   updateBeijingTime();
   monitor.updateAgoText();
   beijingTimer.value = window.setInterval(updateBeijingTime, 1000);
@@ -99,7 +140,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  disconnect();
+  stopLiveData();
   if (beijingTimer.value !== null) clearInterval(beijingTimer.value);
   if (updateAgoTimer.value !== null) clearInterval(updateAgoTimer.value);
   monitor.clearToastTimers();
@@ -109,7 +150,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-container">
+  <RouterView v-if="isPublicRoute" />
+  <div v-else class="app-container">
     <!-- Toast Notifications -->
     <div class="toast-container">
       <transition-group name="toast">
@@ -183,6 +225,13 @@ onBeforeUnmount(() => {
           <span class="ws-dot"></span>
           <span>{{ connectionLabel }}</span>
         </div>
+        <div class="auth-user">
+          <span class="auth-name">{{ auth.user?.username }}</span>
+          <span class="auth-role">{{ auth.user?.role }}</span>
+        </div>
+        <button class="logout-btn" type="button" @click="logout">
+          退出
+        </button>
       </div>
     </header>
 
@@ -444,6 +493,50 @@ onBeforeUnmount(() => {
 
 .ws-disconnected .ws-dot {
   background: var(--danger);
+}
+
+.auth-user {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 88px;
+  padding: 0.32rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.auth-name {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-role {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.logout-btn {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.43rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.logout-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .route-tabs {

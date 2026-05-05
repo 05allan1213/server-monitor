@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 
 import type { ApiResponse } from "../types";
+import { clearStoredAuth, getStoredToken } from "./authStorage";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -9,12 +10,59 @@ const httpClient = axios.create({
   timeout: 10000,
 });
 
+httpClient.interceptors.request.use((config) => {
+  const token = getStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+httpClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<ApiResponse<unknown>>) => {
+    if (error.response?.status === 401) {
+      clearStoredAuth();
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
 export async function getApiData<T>(
   url: string,
   config: AxiosRequestConfig = {},
 ): Promise<T> {
   try {
     const response = await httpClient.get<ApiResponse<T>>(url, config);
+    const payload = response.data;
+
+    if (payload.status !== "success") {
+      throw new Error(payload.error ?? "Unknown API error");
+    }
+
+    if (payload.data === undefined) {
+      throw new Error("API response missing data field");
+    }
+
+    return payload.data;
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      throw normalizeAxiosError(err);
+    }
+    throw err;
+  }
+}
+
+export async function postApiData<T, TBody = unknown>(
+  url: string,
+  body?: TBody,
+  config: AxiosRequestConfig = {},
+): Promise<T> {
+  try {
+    const response = await httpClient.post<ApiResponse<T>>(url, body, config);
     const payload = response.data;
 
     if (payload.status !== "success") {
