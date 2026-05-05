@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ import (
 	servicemetrics "alert-service/metrics"
 	redisstore "alert-service/redis"
 
+	"server-monitor/pkg/httpmiddleware"
 	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
@@ -175,26 +175,6 @@ func main() {
 	}
 }
 
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *statusRecorder) WriteHeader(status int) {
-	if r.status != 0 {
-		return
-	}
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
-
-func (r *statusRecorder) Write(body []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
-	return r.ResponseWriter.Write(body)
-}
-
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, span := otel.Tracer("alert-service/http").Start(r.Context(), r.Method+" "+r.URL.Path)
@@ -206,19 +186,14 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		r = r.WithContext(ctx)
 
 		start := time.Now()
-		recorder := &statusRecorder{ResponseWriter: w}
+		recorder := httpmiddleware.NewStatusRecorder(w)
 		next.ServeHTTP(recorder, r)
-
-		status := recorder.status
-		if status == 0 {
-			status = http.StatusOK
-		}
 
 		logger.FromContext(r.Context()).Info("http request completed",
 			zap.String("module", "http"),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
-			zap.Int("status", status),
+			zap.Int("status", recorder.Status()),
 			zap.Float64("latency_ms", float64(time.Since(start).Microseconds())/1000),
 			zap.String("client_ip", r.RemoteAddr),
 		)
@@ -226,29 +201,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 }
 
 func recoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				logger.FromContext(r.Context()).Error("http request panic recovered",
-					zap.String("module", "http"),
-					zap.String("method", r.Method),
-					zap.String("path", r.URL.Path),
-					zap.Any("error", recovered),
-				)
-				writeErrorJSON(w, http.StatusInternalServerError)
-			}
-		}()
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeErrorJSON(w http.ResponseWriter, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"status": "error",
-		"error":  http.StatusText(status),
+	return httpmiddleware.Recovery(next, func(r *http.Request) []zap.Field {
+		return []zap.Field{
+			zap.String("module", "http"),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		}
 	})
 }
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"server-probe/collector"
 	"server-probe/config"
 
+	"server-monitor/pkg/httpmiddleware"
 	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
@@ -212,30 +212,10 @@ func applyHostPaths(cfg config.Config) error {
 	return nil
 }
 
-type statusResponseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *statusResponseWriter) WriteHeader(status int) {
-	if w.status != 0 {
-		return
-	}
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
-}
-
-func (w *statusResponseWriter) Write(data []byte) (int, error) {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(data)
-}
-
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &statusResponseWriter{ResponseWriter: w}
+		recorder := httpmiddleware.NewStatusRecorder(w)
 		requestID := r.Header.Get(requestIDHeader)
 		if requestID == "" {
 			requestID = newRequestID(start)
@@ -245,16 +225,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(recorder, r)
 
-		status := recorder.status
-		if status == 0 {
-			status = http.StatusOK
-		}
 		latency := time.Since(start)
 		logger.FromContext(r.Context()).Info("http request completed",
 			zap.String("request_id", requestID),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
-			zap.Int("status", status),
+			zap.Int("status", recorder.Status()),
 			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
 			zap.String("client_ip", r.RemoteAddr),
 		)
@@ -281,28 +257,11 @@ func requestIDFromRequest(r *http.Request) string {
 }
 
 func recoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				logger.FromContext(r.Context()).Error("http request panic recovered",
-					zap.String("request_id", requestIDFromRequest(r)),
-					zap.String("method", r.Method),
-					zap.String("path", r.URL.Path),
-					zap.Any("error", recovered),
-				)
-				writeErrorJSON(w, http.StatusInternalServerError)
-			}
-		}()
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeErrorJSON(w http.ResponseWriter, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"status": "error",
-		"error":  http.StatusText(status),
+	return httpmiddleware.Recovery(next, func(r *http.Request) []zap.Field {
+		return []zap.Field{
+			zap.String("request_id", requestIDFromRequest(r)),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		}
 	})
 }
