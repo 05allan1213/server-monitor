@@ -50,12 +50,7 @@ spec:
               mountPath: /host/sys
               readOnly: true
           resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
+            {{- toYaml .Values.serverProbe.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz

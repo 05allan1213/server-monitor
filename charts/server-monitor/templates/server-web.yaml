@@ -55,12 +55,7 @@ spec:
           ports:
             - containerPort: 8080
           resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 256Mi
+            {{- toYaml .Values.serverWeb.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
