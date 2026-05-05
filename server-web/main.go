@@ -33,6 +33,22 @@ type wsMessage struct {
 	Data interface{} `json:"data"`
 }
 
+type app struct {
+	cfg               config.Config
+	shutdownTracer    func(context.Context) error
+	prometheusClient  *promclient.Client
+	redisClient       *rediscache.Client
+	mysqlClient       *database.MySQL
+	kafkaProducer     *eventbus.Producer
+	alertHub          *pubsub.Hub
+	websocketHub      *ws.Hub
+	server            *http.Server
+	ctx               context.Context
+	cancel            context.CancelFunc
+	subscriberDone    <-chan struct{}
+	alertHubConsumers <-chan struct{}
+}
+
 func main() {
 	log, err := logger.Init("server-web")
 	if err != nil {
@@ -41,31 +57,27 @@ func main() {
 	}
 	defer logger.Sync(log)
 
-	cfg := config.Load()
-	if err := cfg.Validate(); err != nil {
-		zap.L().Error("invalid config", zap.Error(err))
+	app, err := initApp(context.Background())
+	if err != nil {
+		zap.L().Error("server-web init failed", zap.Error(err))
 		os.Exit(1)
 	}
-	shutdownTracer, err := tracer.Init(context.Background(), tracer.Config{
-		ServiceName:  "server-web",
-		OTLPEndpoint: cfg.TraceOTLPEndpoint,
-		SampleRate:   cfg.TraceSampleRate,
-	})
-	if err != nil {
-		zap.L().Warn("tracer init failed; tracing disabled",
-			zap.String("endpoint", cfg.TraceOTLPEndpoint),
-			zap.Error(err),
-		)
-		shutdownTracer = func(context.Context) error { return nil }
-	} else if cfg.TraceOTLPEndpoint != "" {
-		zap.L().Info("tracer initialized",
-			zap.String("endpoint", cfg.TraceOTLPEndpoint),
-			zap.Float64("sample_rate", cfg.TraceSampleRate),
-		)
+
+	exitCode := runApp(app)
+	shutdownApp(app)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+func initApp(ctx context.Context) (*app, error) {
+	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
+	shutdownTracer := initTracer(ctx, cfg)
 	gin.SetMode(cfg.GinMode)
-
 	prometheusClient := promclient.NewClient(cfg.PrometheusURL, cfg.RequestTimeout)
 	redisClient := rediscache.NewClient(rediscache.Options{
 		Addr:            cfg.RedisAddr,
@@ -77,6 +89,80 @@ func main() {
 		ConnMaxLifetime: cfg.RedisConnMaxLifetime,
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
+
+	mysqlClient, err := initMySQL(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	authService, err := initAuthService(cfg, mysqlClient)
+	if err != nil {
+		return nil, err
+	}
+
+	if mysqlClient != nil {
+		zap.L().Info("mysql initialized",
+			zap.String("host", cfg.MySQLHost),
+			zap.String("port", cfg.MySQLPort),
+			zap.String("database", cfg.MySQLDatabase),
+		)
+	}
+
+	kafkaProducer := initKafkaProducer(cfg)
+	alertHub := pubsub.NewHub(64)
+	websocketHub := ws.NewHub(cfg.CORSOrigins)
+
+	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, authService, websocketHub, kafkaProducer)
+	if err != nil {
+		return nil, fmt.Errorf("create router: %w", err)
+	}
+
+	appCtx, cancel := context.WithCancel(context.Background())
+	return &app{
+		cfg:              cfg,
+		shutdownTracer:   shutdownTracer,
+		prometheusClient: prometheusClient,
+		redisClient:      redisClient,
+		mysqlClient:      mysqlClient,
+		kafkaProducer:    kafkaProducer,
+		alertHub:         alertHub,
+		websocketHub:     websocketHub,
+		server: &http.Server{
+			Addr:              cfg.ListenAddr,
+			Handler:           router,
+			ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+			ReadTimeout:       cfg.HTTPReadTimeout,
+			WriteTimeout:      cfg.HTTPWriteTimeout,
+			IdleTimeout:       cfg.HTTPIdleTimeout,
+		},
+		ctx:    appCtx,
+		cancel: cancel,
+	}, nil
+}
+
+func initTracer(ctx context.Context, cfg config.Config) func(context.Context) error {
+	shutdownTracer, err := tracer.Init(ctx, tracer.Config{
+		ServiceName:  "server-web",
+		OTLPEndpoint: cfg.TraceOTLPEndpoint,
+		SampleRate:   cfg.TraceSampleRate,
+	})
+	if err != nil {
+		zap.L().Warn("tracer init failed; tracing disabled",
+			zap.String("endpoint", cfg.TraceOTLPEndpoint),
+			zap.Error(err),
+		)
+		return func(context.Context) error { return nil }
+	}
+	if cfg.TraceOTLPEndpoint != "" {
+		zap.L().Info("tracer initialized",
+			zap.String("endpoint", cfg.TraceOTLPEndpoint),
+			zap.Float64("sample_rate", cfg.TraceSampleRate),
+		)
+	}
+	return shutdownTracer
+}
+
+func initMySQL(cfg config.Config) (*database.MySQL, error) {
 	mysqlInitCtx, mysqlInitCancel := context.WithTimeout(context.Background(), cfg.MySQLStartupTimeout)
 	mysqlClient, err := database.OpenMySQL(mysqlInitCtx, database.MySQLConfig{
 		Host:        cfg.MySQLHost,
@@ -88,50 +174,36 @@ func main() {
 	})
 	mysqlInitCancel()
 	if err != nil {
-		zap.L().Error("mysql init failed",
-			zap.String("host", cfg.MySQLHost),
-			zap.String("port", cfg.MySQLPort),
-			zap.String("database", cfg.MySQLDatabase),
-			zap.Error(err),
-		)
-		os.Exit(1)
+		return nil, fmt.Errorf("mysql init failed: %w", err)
 	}
 	if mysqlClient != nil {
 		if err := database.Migrate(mysqlClient.DB()); err != nil {
-			zap.L().Error("mysql migration failed",
-				zap.String("host", cfg.MySQLHost),
-				zap.String("port", cfg.MySQLPort),
-				zap.String("database", cfg.MySQLDatabase),
-				zap.Error(err),
-			)
-			os.Exit(1)
+			return nil, fmt.Errorf("mysql migration failed: %w", err)
 		}
 	}
+	return mysqlClient, nil
+}
 
+func initAuthService(cfg config.Config, mysqlClient *database.MySQL) (*authpkg.Service, error) {
 	var authService *authpkg.Service
 	if mysqlClient != nil && len(strings.TrimSpace(cfg.JWTSecret)) >= 32 {
+		var err error
 		authService, err = authpkg.NewService(mysqlClient.DB(), cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
 		if err != nil {
-			zap.L().Error("auth service init failed", zap.Error(err))
-			os.Exit(1)
+			return nil, fmt.Errorf("auth service init failed: %w", err)
 		}
 		created, err := authService.EnsureInitialAdmin(context.Background(), cfg.AdminPassword)
 		if err != nil {
-			zap.L().Error("initial admin setup failed", zap.Error(err))
-			os.Exit(1)
+			return nil, fmt.Errorf("initial admin setup failed: %w", err)
 		}
 		if created {
 			zap.L().Info("initial admin user created", zap.String("username", "admin"))
 		}
 	}
+	return authService, nil
+}
 
-	if mysqlClient != nil {
-		zap.L().Info("mysql initialized",
-			zap.String("host", cfg.MySQLHost),
-			zap.String("port", cfg.MySQLPort),
-			zap.String("database", cfg.MySQLDatabase),
-		)
-	}
+func initKafkaProducer(cfg config.Config) *eventbus.Producer {
 	var kafkaProducer *eventbus.Producer
 	if len(cfg.KafkaBrokers) > 0 {
 		producer, err := eventbus.NewProducer(cfg.KafkaBrokers)
@@ -145,68 +217,15 @@ func main() {
 			zap.L().Info("kafka producer initialized", zap.Strings("brokers", cfg.KafkaBrokers))
 		}
 	}
-	alertHub := pubsub.NewHub(64)
-	websocketHub := ws.NewHub(cfg.CORSOrigins)
+	return kafkaProducer
+}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go websocketHub.Run(ctx)
-
-	var subscriberDone <-chan struct{}
-	if redisClient.Enabled() {
-		pingCtx, pingCancel := context.WithTimeout(context.Background(), cfg.RedisStartupTimeout)
-		if err := redisClient.Ping(pingCtx); err != nil {
-			zap.L().Error("redis ping failed at startup",
-				zap.String("addr", cfg.RedisAddr),
-				zap.Error(err),
-			)
-		}
-		pingCancel()
-
-		subscriber := pubsub.NewSubscriber(redisClient, alertHub, rediscache.AlertChannel)
-		done := make(chan struct{})
-		subscriberDone = done
-		go func() {
-			defer close(done)
-			subscriber.Run(ctx)
-		}()
-	}
-
-	alertHubConsumers := make(chan struct{})
-	go func() {
-		defer close(alertHubConsumers)
-		for message := range alertHub.Messages() {
-			if err := websocketHub.BroadcastBlocking(ctx, message); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				zap.L().Warn("broadcast alert failed", zap.Error(err))
-			}
-		}
-	}()
-
-	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout, cfg.HostsBroadcastInterval)
-
-	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, authService, websocketHub, kafkaProducer)
-	if err != nil {
-		zap.L().Error("create router failed", zap.Error(err))
-		os.Exit(1)
-	}
-
-	srv := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           router,
-		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
-		ReadTimeout:       cfg.HTTPReadTimeout,
-		WriteTimeout:      cfg.HTTPWriteTimeout,
-		IdleTimeout:       cfg.HTTPIdleTimeout,
-	}
-
+func runApp(app *app) int {
+	startBackgroundTasks(app)
 	serverErr := make(chan error, 1)
 	go func() {
-		zap.L().Info("server-web listening", zap.String("addr", cfg.ListenAddr))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		zap.L().Info("server-web listening", zap.String("addr", app.cfg.ListenAddr))
+		if err := app.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()
@@ -222,47 +241,89 @@ func main() {
 		exitCode = 1
 		zap.L().Error("server-web exited", zap.Error(err))
 	}
+	signal.Stop(quit)
 
+	return exitCode
+}
+
+func startBackgroundTasks(app *app) {
+	go app.websocketHub.Run(app.ctx)
+
+	if app.redisClient.Enabled() {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), app.cfg.RedisStartupTimeout)
+		if err := app.redisClient.Ping(pingCtx); err != nil {
+			zap.L().Error("redis ping failed at startup",
+				zap.String("addr", app.cfg.RedisAddr),
+				zap.Error(err),
+			)
+		}
+		pingCancel()
+
+		subscriber := pubsub.NewSubscriber(app.redisClient, app.alertHub, rediscache.AlertChannel)
+		done := make(chan struct{})
+		app.subscriberDone = done
+		go func() {
+			defer close(done)
+			subscriber.Run(app.ctx)
+		}()
+	}
+
+	alertHubConsumers := make(chan struct{})
+	app.alertHubConsumers = alertHubConsumers
+	go func() {
+		defer close(alertHubConsumers)
+		for message := range app.alertHub.Messages() {
+			if err := app.websocketHub.BroadcastBlocking(app.ctx, message); err != nil {
+				if app.ctx.Err() != nil {
+					return
+				}
+				zap.L().Warn("broadcast alert failed", zap.Error(err))
+			}
+		}
+	}()
+
+	go broadcastHosts(app.ctx, app.prometheusClient, app.websocketHub, app.cfg.RequestTimeout, app.cfg.HostsBroadcastInterval)
+}
+
+func shutdownApp(app *app) {
 	zap.L().Info("server-web shutting down")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
+	if err := app.server.Shutdown(shutdownCtx); err != nil {
 		zap.L().Error("server-web shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	if err := shutdownTracer(traceShutdownCtx); err != nil {
+	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
+	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
 		zap.L().Warn("tracer shutdown failed", zap.Error(err))
 	}
 	traceShutdownCancel()
 
-	cancel()
-	if subscriberDone != nil {
-		<-subscriberDone
+	app.cancel()
+	if app.subscriberDone != nil {
+		<-app.subscriberDone
 	}
-	if err := redisClient.Close(); err != nil {
+	if err := app.redisClient.Close(); err != nil {
 		zap.L().Error("redis close failed", zap.Error(err))
 	}
-	if mysqlClient != nil {
-		if err := mysqlClient.Close(); err != nil {
+	if app.mysqlClient != nil {
+		if err := app.mysqlClient.Close(); err != nil {
 			zap.L().Error("mysql close failed", zap.Error(err))
 		}
 	}
-	if kafkaProducer != nil {
-		if err := kafkaProducer.Close(); err != nil {
+	if app.kafkaProducer != nil {
+		if err := app.kafkaProducer.Close(); err != nil {
 			zap.L().Warn("kafka producer close failed", zap.Error(err))
 		}
 	}
 
-	alertHub.Close()
-	<-alertHubConsumers
+	app.alertHub.Close()
+	if app.alertHubConsumers != nil {
+		<-app.alertHubConsumers
+	}
 
 	zap.L().Info("server-web stopped")
-	if exitCode != 0 {
-		os.Exit(exitCode)
-	}
 }
 
 func broadcastHosts(ctx context.Context, promClient *promclient.Client, hub *ws.Hub, timeout time.Duration, interval time.Duration) {
