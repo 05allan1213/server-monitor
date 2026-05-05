@@ -24,7 +24,7 @@ import (
 	ws "server-web/websocket"
 )
 
-type authService interface {
+type AuthService interface {
 	Login(ctx context.Context, username string, password string) (authpkg.LoginResult, error)
 	AuthenticateBearer(authHeader string) (authpkg.Identity, error)
 }
@@ -55,7 +55,7 @@ type Handler struct {
 	promClient     *promclient.Client
 	cacheClient    cacheClient
 	mysqlClient    mysqlClient
-	authService    authService
+	authService    AuthService
 	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
@@ -164,7 +164,7 @@ type Config struct {
 	CacheTimeout   time.Duration
 	AlertProducer  alertProducer
 	MySQLClient    mysqlClient
-	AuthService    authService
+	AuthService    AuthService
 }
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) (*Handler, error) {

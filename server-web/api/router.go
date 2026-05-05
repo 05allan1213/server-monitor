@@ -11,7 +11,6 @@ import (
 
 	"server-web/api/handlers"
 	"server-web/api/middleware"
-	authpkg "server-web/auth"
 	"server-web/config"
 	"server-web/database"
 	eventbus "server-web/kafka"
@@ -20,7 +19,11 @@ import (
 	ws "server-web/websocket"
 )
 
-func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, mysqlClient *database.MySQL, authService *authpkg.Service, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
+type authService interface {
+	handlers.AuthService
+}
+
+func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, mysqlClient *database.MySQL, authService authService, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
 	router := gin.New()
 	metrics := middleware.NewMetrics()
 	if websocketHub != nil {
@@ -61,18 +64,23 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
 	router.POST("/api/v1/auth/login", handler.Login)
-	router.GET("/api/v1/auth/me", handler.Me)
-	router.GET("/api/v1/hosts", handler.Hosts)
-	router.GET("/api/v1/hosts/:instance/metrics", handler.HostMetrics)
-	router.GET("/api/v1/dashboard/overview", handler.DashboardOverview)
-	router.GET("/api/v1/alerts/active", handler.ActiveAlerts)
-	router.GET("/api/v1/alerts/events", handler.AlertEvents)
-	router.GET("/ws/alerts", handler.AlertsWebSocket)
 	router.POST(
 		"/api/v1/webhook/alertmanager",
 		limitRequestBody(cfg.AlertmanagerWebhookMaxBodyBytes),
 		handler.AlertmanagerWebhook,
 	)
+
+	protected := router.Group("")
+	if cfg.AuthEnabled {
+		protected.Use(middleware.Auth(authService))
+	}
+	protected.GET("/api/v1/auth/me", handler.Me)
+	protected.GET("/api/v1/hosts", handler.Hosts)
+	protected.GET("/api/v1/hosts/:instance/metrics", handler.HostMetrics)
+	protected.GET("/api/v1/dashboard/overview", handler.DashboardOverview)
+	protected.GET("/api/v1/alerts/active", handler.ActiveAlerts)
+	protected.GET("/api/v1/alerts/events", handler.AlertEvents)
+	protected.GET("/ws/alerts", handler.AlertsWebSocket)
 
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
