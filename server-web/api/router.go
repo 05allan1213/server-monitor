@@ -82,6 +82,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	protected.GET("/api/v1/dashboard/overview", handler.DashboardOverview)
 	protected.GET("/api/v1/alerts/active", handler.ActiveAlerts)
 	protected.GET("/api/v1/alerts/events", handler.AlertEvents)
+	protected.GET("/api/v1/alert-histories", handler.ListAlertHistories)
 	protected.GET("/ws/alerts", handler.AlertsWebSocket)
 
 	hostGroupsRead := protected.Group("/api/v1/host-groups")

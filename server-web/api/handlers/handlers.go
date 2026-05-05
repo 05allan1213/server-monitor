@@ -19,6 +19,7 @@ import (
 	authpkg "server-web/auth"
 	eventbus "server-web/kafka"
 	"server-web/logger"
+	"server-web/model"
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
 	"server-web/webhook"
@@ -538,6 +539,8 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 			continue
 		}
 
+		h.archiveAlertHistory(ctx, alert)
+
 		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, event); err != nil {
 			// Active state and history are already stored; failing the webhook here
 			// would trigger retries and duplicate history entries.
@@ -553,6 +556,56 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	c.JSON(http.StatusAccepted, response{
 		Status: "accepted",
 	})
+}
+
+func (h *Handler) archiveAlertHistory(ctx context.Context, alert webhook.AlertRecord) {
+	if h.db == nil {
+		return
+	}
+
+	history, err := buildAlertHistory(alert)
+	if err != nil {
+		logger.FromContext(ctx).Warn("build alert history failed",
+			zap.String("fingerprint", alert.Fingerprint),
+			zap.String("status", alert.Status),
+			zap.Error(err),
+		)
+		return
+	}
+
+	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.AlertHistory
+		findErr := tx.
+			Where("fingerprint = ? AND fired_at = ?", history.Fingerprint, history.FiredAt).
+			Order("id DESC").
+			First(&existing).Error
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return tx.Create(&history).Error
+		}
+		if findErr != nil {
+			return findErr
+		}
+
+		updates := map[string]interface{}{
+			"alert_name":  history.AlertName,
+			"instance":    history.Instance,
+			"severity":    history.Severity,
+			"summary":     history.Summary,
+			"labels_json": history.LabelsJSON,
+		}
+		if history.Status == "resolved" {
+			updates["status"] = "resolved"
+			updates["resolved_at"] = history.ResolvedAt
+		}
+		return tx.Model(&model.AlertHistory{}).Where("id = ?", existing.ID).Updates(updates).Error
+	})
+	if err != nil {
+		logger.FromContext(ctx).Warn("archive alert history failed",
+			zap.String("fingerprint", alert.Fingerprint),
+			zap.String("status", alert.Status),
+			zap.Error(err),
+		)
+	}
 }
 
 func (h *Handler) sendAlertEventToKafka(ctx context.Context, alert webhook.AlertRecord, receivedAt time.Time) {
