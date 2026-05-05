@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,14 +14,11 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"server-monitor/pkg/logger"
-
+	appalert "server-web/alert"
 	authpkg "server-web/auth"
 	appcache "server-web/cache"
 	eventbus "server-web/kafka"
-	"server-web/model"
 	promclient "server-web/prometheus"
-	rediscache "server-web/redis"
 	"server-web/webhook"
 	ws "server-web/websocket"
 )
@@ -64,12 +59,11 @@ type Handler struct {
 	db             *gorm.DB
 	cacheClient    cacheClient
 	cacheService   *appcache.Service
+	alertService   *appalert.Service
 	mysqlClient    mysqlClient
 	authService    AuthService
-	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
-	dedupeTTL      time.Duration
 	cacheTimeout   time.Duration
 	ruleSync       AlertRuleSyncConfig
 	websocketHub   *ws.Hub
@@ -80,8 +74,6 @@ type response struct {
 	Data   interface{} `json:"data,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
-
-const defaultAlertEventsLimit int64 = 8
 
 type hostMetricsRange struct {
 	duration time.Duration
@@ -107,12 +99,6 @@ var validAlertEventStatuses = map[string]struct{}{
 }
 
 var validAlertEventSeverities = map[string]struct{}{
-	"critical": {},
-	"warning":  {},
-	"info":     {},
-}
-
-var validActiveAlertSeverities = map[string]struct{}{
 	"critical": {},
 	"warning":  {},
 	"info":     {},
@@ -179,12 +165,15 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 			HostsTTL:     cfg.HostsTTL,
 			DashboardTTL: cfg.DashboardTTL,
 		}),
+		alertService: appalert.NewService(cacheClient, appalert.Options{
+			DedupeTTL: cfg.DedupeTTL,
+			DB:        cfg.DB,
+			Producer:  cfg.AlertProducer,
+		}),
 		mysqlClient:    cfg.MySQLClient,
 		authService:    cfg.AuthService,
-		alertProducer:  cfg.AlertProducer,
 		readyTimeout:   cfg.ReadyTimeout,
 		requestTimeout: cfg.RequestTimeout,
-		dedupeTTL:      cfg.DedupeTTL,
 		cacheTimeout:   cfg.CacheTimeout,
 		ruleSync:       cfg.RuleSync,
 		websocketHub:   websocketHub,
@@ -480,7 +469,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 }
 
 func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
 			Status: "error",
 			Error:  "redis is required for alert webhook handling",
@@ -509,93 +498,9 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 
 	receivedAt := time.Now().UTC()
 
-	for _, alert := range payload.Alerts {
-		if alert.Fingerprint == "" {
-			continue
-		}
-		if !isAlertStatusSupported(alert.Status) {
-			c.JSON(http.StatusBadRequest, response{
-				Status: "error",
-				Error:  fmt.Sprintf("unsupported alert status %q", alert.Status),
-			})
-			return
-		}
-	}
-
-	for _, alert := range payload.Alerts {
-		if alert.Fingerprint == "" {
-			continue
-		}
-
-		message, err := json.Marshal(alert)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, response{
-				Status: "error",
-				Error:  fmt.Sprintf("marshal alert payload failed: %v", err),
-			})
-			return
-		}
-
-		switch alert.Status {
-		case "firing":
-			if err := h.cacheClient.HSet(ctx, rediscache.ActiveAlertsKey, alert.Fingerprint, message); err != nil {
-				c.JSON(http.StatusBadGateway, response{
-					Status: "error",
-					Error:  fmt.Sprintf("store active alert failed: %v", err),
-				})
-				return
-			}
-		case "resolved":
-			if err := h.cacheClient.HDel(ctx, rediscache.ActiveAlertsKey, alert.Fingerprint); err != nil {
-				c.JSON(http.StatusBadGateway, response{
-					Status: "error",
-					Error:  fmt.Sprintf("delete active alert failed: %v", err),
-				})
-				return
-			}
-		}
-
-		event, err := json.Marshal(webhook.NewAlertEvent(alert, receivedAt))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, response{
-				Status: "error",
-				Error:  fmt.Sprintf("marshal alert event failed: %v", err),
-			})
-			return
-		}
-
-		stored, err := h.cacheClient.AddAlertEventOnce(
-			ctx,
-			rediscache.AlertEventsKey,
-			alertEventDedupeKey(alert),
-			rediscache.AlertEventsMax,
-			event,
-			[]byte(receivedAt.Format(time.RFC3339Nano)),
-			h.dedupeTTL,
-		)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, response{
-				Status: "error",
-				Error:  fmt.Sprintf("store alert event failed: %v", err),
-			})
-			return
-		}
-		if !stored {
-			continue
-		}
-
-		h.archiveAlertHistory(ctx, alert)
-
-		if err := h.cacheClient.Publish(ctx, rediscache.AlertChannel, event); err != nil {
-			// Active state and history are already stored; failing the webhook here
-			// would trigger retries and duplicate history entries.
-			zap.L().Warn("publish alert event failed",
-				zap.String("fingerprint", alert.Fingerprint),
-				zap.String("status", alert.Status),
-				zap.Error(err),
-			)
-		}
-		h.sendAlertEventToKafka(c.Request.Context(), alert, receivedAt)
+	if err := h.alertService.HandleWebhook(ctx, payload, receivedAt); err != nil {
+		writeAlertServiceError(c, err)
+		return
 	}
 
 	c.JSON(http.StatusAccepted, response{
@@ -603,83 +508,8 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	})
 }
 
-func (h *Handler) archiveAlertHistory(ctx context.Context, alert webhook.AlertRecord) {
-	if h.db == nil {
-		return
-	}
-
-	history, err := buildAlertHistory(alert)
-	if err != nil {
-		logger.FromContext(ctx).Warn("build alert history failed",
-			zap.String("fingerprint", alert.Fingerprint),
-			zap.String("status", alert.Status),
-			zap.Error(err),
-		)
-		return
-	}
-
-	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing model.AlertHistory
-		findErr := tx.
-			Where("fingerprint = ? AND fired_at = ?", history.Fingerprint, history.FiredAt).
-			Order("id DESC").
-			First(&existing).Error
-		if errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return tx.Create(&history).Error
-		}
-		if findErr != nil {
-			return findErr
-		}
-
-		updates := map[string]interface{}{
-			"alert_name":  history.AlertName,
-			"instance":    history.Instance,
-			"severity":    history.Severity,
-			"summary":     history.Summary,
-			"labels_json": history.LabelsJSON,
-		}
-		if history.Status == "resolved" {
-			updates["status"] = "resolved"
-			updates["resolved_at"] = history.ResolvedAt
-		}
-		return tx.Model(&model.AlertHistory{}).Where("id = ?", existing.ID).Updates(updates).Error
-	})
-	if err != nil {
-		logger.FromContext(ctx).Warn("archive alert history failed",
-			zap.String("fingerprint", alert.Fingerprint),
-			zap.String("status", alert.Status),
-			zap.Error(err),
-		)
-	}
-}
-
-func (h *Handler) sendAlertEventToKafka(ctx context.Context, alert webhook.AlertRecord, receivedAt time.Time) {
-	if h.alertProducer == nil {
-		return
-	}
-
-	event := eventbus.AlertEvent{
-		Type:         "alert",
-		Fingerprint:  alert.Fingerprint,
-		Status:       alert.Status,
-		Labels:       alert.Labels,
-		Annotations:  alert.Annotations,
-		StartsAt:     alert.StartsAt,
-		EndsAt:       alert.EndsAt,
-		GeneratorURL: alert.GeneratorURL,
-		ReceivedAt:   receivedAt,
-	}
-	if err := h.alertProducer.SendAlertEvent(event); err != nil {
-		logger.FromContext(ctx).Warn("kafka produce alert event failed",
-			zap.String("fingerprint", alert.Fingerprint),
-			zap.String("status", alert.Status),
-			zap.Error(err),
-		)
-	}
-}
-
 func (h *Handler) ActiveAlerts(c *gin.Context) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
 			Status: "error",
 			Error:  "redis is required for active alerts query",
@@ -690,23 +520,11 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
-	severityFilter := parseAlertEventFilter(c.Query("severity"), validActiveAlertSeverities)
-
-	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
+	alerts, err := h.alertService.ActiveAlerts(ctx, appalert.ParseActiveSeverityFilter(c.Query("severity")))
 	if err != nil {
-		c.JSON(http.StatusBadGateway, response{
-			Status: "error",
-			Error:  fmt.Sprintf("load active alerts failed: %v", err),
-		})
+		writeAlertServiceError(c, err)
 		return
 	}
-
-	alerts := decodeActiveAlerts(values)
-	alerts = filterActiveAlerts(alerts, severityFilter)
-
-	sort.Slice(alerts, func(i, j int) bool {
-		return alerts[i].StartsAt.After(alerts[j].StartsAt)
-	})
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
@@ -715,7 +533,7 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 }
 
 func (h *Handler) AlertEvents(c *gin.Context) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
+	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
 			Status: "error",
 			Error:  "redis is required for alert events query",
@@ -726,26 +544,74 @@ func (h *Handler) AlertEvents(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
-	limit := parseAlertEventsLimit(c.Query("limit"))
-	statusFilter := parseAlertEventFilter(c.Query("status"), validAlertEventStatuses)
-	severityFilter := parseAlertEventFilter(c.Query("severity"), validAlertEventSeverities)
-
-	values, err := h.cacheClient.XRevRangeN(ctx, rediscache.AlertEventsKey, limit)
+	events, err := h.alertService.AlertEvents(
+		ctx,
+		appalert.ParseEventsLimit(c.Query("limit")),
+		appalert.ParseEventFilter(c.Query("status")),
+		appalert.ParseEventSeverityFilter(c.Query("severity")),
+	)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, response{
-			Status: "error",
-			Error:  fmt.Sprintf("load alert events failed: %v", err),
-		})
+		writeAlertServiceError(c, err)
 		return
 	}
-
-	events := decodeAlertEvents(values)
-	events = filterAlertEvents(events, statusFilter, severityFilter)
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
 		Data:   events,
 	})
+}
+
+func writeAlertServiceError(c *gin.Context, err error) {
+	var serviceErr *appalert.ServiceError
+	if !errors.As(err, &serviceErr) {
+		c.JSON(http.StatusInternalServerError, response{Status: "error", Error: err.Error()})
+		return
+	}
+
+	switch serviceErr.Kind {
+	case appalert.ErrorUnsupportedStatus:
+		c.JSON(http.StatusBadRequest, response{
+			Status: "error",
+			Error:  fmt.Sprintf("unsupported alert status %q", serviceErr.Status),
+		})
+	case appalert.ErrorMarshalAlert:
+		c.JSON(http.StatusInternalServerError, response{
+			Status: "error",
+			Error:  fmt.Sprintf("marshal alert payload failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorStoreActiveAlert:
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("store active alert failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorDeleteActiveAlert:
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("delete active alert failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorMarshalAlertEvent:
+		c.JSON(http.StatusInternalServerError, response{
+			Status: "error",
+			Error:  fmt.Sprintf("marshal alert event failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorStoreAlertEvent:
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("store alert event failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorLoadActiveAlerts:
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("load active alerts failed: %v", serviceErr.Err),
+		})
+	case appalert.ErrorLoadAlertEvents:
+		c.JSON(http.StatusBadGateway, response{
+			Status: "error",
+			Error:  fmt.Sprintf("load alert events failed: %v", serviceErr.Err),
+		})
+	default:
+		c.JSON(http.StatusInternalServerError, response{Status: "error", Error: err.Error()})
+	}
 }
 
 func (h *Handler) AlertsWebSocket(c *gin.Context) {
@@ -760,108 +626,6 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
 		zap.L().Warn("websocket upgrade failed", zap.Error(err))
 	}
-}
-
-func decodeActiveAlerts(values map[string]string) []webhook.AlertRecord {
-	alerts := make([]webhook.AlertRecord, 0, len(values))
-	for _, value := range values {
-		var alert webhook.AlertRecord
-		if err := json.Unmarshal([]byte(value), &alert); err != nil {
-			zap.L().Warn("skip corrupted alert data", zap.Error(err))
-			continue
-		}
-		alerts = append(alerts, alert)
-	}
-
-	return alerts
-}
-
-func decodeAlertEvents(values []string) []webhook.AlertEvent {
-	events := make([]webhook.AlertEvent, 0, len(values))
-	for _, value := range values {
-		var event webhook.AlertEvent
-		if err := json.Unmarshal([]byte(value), &event); err != nil {
-			zap.L().Warn("skip corrupted alert event", zap.Error(err))
-			continue
-		}
-		events = append(events, event)
-	}
-
-	return events
-}
-
-func parseAlertEventsLimit(raw string) int64 {
-	if raw == "" {
-		return defaultAlertEventsLimit
-	}
-
-	parsed, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || parsed <= 0 {
-		return defaultAlertEventsLimit
-	}
-	if parsed > rediscache.AlertEventsMax {
-		return rediscache.AlertEventsMax
-	}
-
-	return parsed
-}
-
-func isAlertStatusSupported(status string) bool {
-	_, ok := validAlertEventStatuses[status]
-	return ok
-}
-
-func alertEventDedupeKey(alert webhook.AlertRecord) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s",
-		rediscache.AlertEventDedupeKey,
-		alert.Fingerprint,
-		alert.Status,
-		alert.StartsAt.UTC().Format(time.RFC3339Nano),
-		alert.EndsAt.UTC().Format(time.RFC3339Nano),
-	)
-}
-
-func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {
-	if _, ok := allowed[raw]; !ok {
-		return ""
-	}
-
-	return raw
-}
-
-func filterAlertEvents(events []webhook.AlertEvent, statusFilter, severityFilter string) []webhook.AlertEvent {
-	if statusFilter == "" && severityFilter == "" {
-		return events
-	}
-
-	filtered := make([]webhook.AlertEvent, 0, len(events))
-	for _, event := range events {
-		if statusFilter != "" && event.Status != statusFilter {
-			continue
-		}
-		if severityFilter != "" && (event.Labels["severity"] != severityFilter) {
-			continue
-		}
-		filtered = append(filtered, event)
-	}
-
-	return filtered
-}
-
-func filterActiveAlerts(alerts []webhook.AlertRecord, severityFilter string) []webhook.AlertRecord {
-	if severityFilter == "" {
-		return alerts
-	}
-
-	filtered := make([]webhook.AlertRecord, 0, len(alerts))
-	for _, alert := range alerts {
-		if alert.Labels["severity"] != severityFilter {
-			continue
-		}
-		filtered = append(filtered, alert)
-	}
-
-	return filtered
 }
 
 func filterHostsByStatus(hosts []promclient.Host, statusFilter string) []promclient.Host {
@@ -919,6 +683,14 @@ func filterHostsByRisk(hosts []promclient.Host, riskFilter string) []promclient.
 	}
 
 	return filtered
+}
+
+func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {
+	if _, ok := allowed[raw]; !ok {
+		return ""
+	}
+
+	return raw
 }
 
 func filterHosts(hosts []promclient.Host, statusFilter, queryFilter, riskFilter string) []promclient.Host {

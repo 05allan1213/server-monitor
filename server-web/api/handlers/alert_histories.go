@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	appalert "server-web/alert"
 	"server-web/model"
 	"server-web/webhook"
 )
@@ -250,38 +250,5 @@ func parsePositiveIntQuery(c *gin.Context, name string, defaultValue int, maxVal
 }
 
 func buildAlertHistory(alert webhook.AlertRecord) (model.AlertHistory, error) {
-	labelsJSON, err := marshalStringMap(alert.Labels)
-	if err != nil {
-		return model.AlertHistory{}, err
-	}
-
-	history := model.AlertHistory{
-		Fingerprint: alert.Fingerprint,
-		AlertName:   strings.TrimSpace(alert.Labels["alertname"]),
-		Instance:    strings.TrimSpace(alert.Labels["instance"]),
-		Severity:    strings.TrimSpace(alert.Labels["severity"]),
-		Status:      alert.Status,
-		Summary:     strings.TrimSpace(alert.Annotations["summary"]),
-		LabelsJSON:  labelsJSON,
-		FiredAt:     alert.StartsAt.UTC(),
-	}
-	if history.Severity == "" {
-		history.Severity = "warning"
-	}
-	if alert.Status == "resolved" {
-		resolvedAt := alert.EndsAt.UTC()
-		history.ResolvedAt = &resolvedAt
-	}
-	return history, nil
-}
-
-func marshalStringMap(values map[string]string) (string, error) {
-	if values == nil {
-		values = map[string]string{}
-	}
-	data, err := json.Marshal(values)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return appalert.BuildHistory(alert)
 }
