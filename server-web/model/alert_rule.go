@@ -10,7 +10,7 @@ type AlertRule struct {
 	Severity    string    `gorm:"type:varchar(32);not null;default:warning" json:"severity"`
 	Summary     string    `gorm:"type:varchar(512);not null;default:''" json:"summary"`
 	Description string    `gorm:"type:text;not null" json:"description"`
-	Enabled     bool      `gorm:"not null;default:true;index" json:"enabled"`
+	Enabled     bool      `gorm:"not null;index" json:"enabled"`
 	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }

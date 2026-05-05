@@ -215,7 +215,6 @@ func (h *Handler) Readyz(c *gin.Context) {
 	dependencies := gin.H{
 		"prometheus": "ok",
 		"redis":      "disabled",
-		"mysql":      "disabled",
 	}
 
 	var errors []string
@@ -231,14 +230,6 @@ func (h *Handler) Readyz(c *gin.Context) {
 			errors = append(errors, err.Error())
 		} else {
 			dependencies["redis"] = "ok"
-		}
-	}
-
-	if h.mysqlClient != nil && h.mysqlClient.Enabled() {
-		if err := h.mysqlClient.Ping(ctx); err != nil {
-			dependencies["mysql"] = "unreachable"
-		} else {
-			dependencies["mysql"] = "ok"
 		}
 	}
 
