@@ -33,9 +33,21 @@ const (
 	shutdownPhases    = 3
 )
 
-func main() {
-	cfg := config.Load()
+type app struct {
+	cfg            config.Config
+	shutdownTracer func(context.Context) error
+	redisClient    *redisstore.Client
+	consumer       *kafka.Consumer
+	healthHandler  *health.Handler
+	serviceMetrics *servicemetrics.Metrics
+	server         *http.Server
+	ctx            context.Context
+	cancel         context.CancelFunc
+	consumerErr    chan error
+	consumerDone   chan struct{}
+}
 
+func main() {
 	log, err := logger.Init("alert-service")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
@@ -43,7 +55,66 @@ func main() {
 	}
 	defer logger.Sync(log)
 
-	shutdownTracer, err := tracer.Init(context.Background(), tracer.Config{
+	app, err := initApp(context.Background())
+	if err != nil {
+		zap.L().Fatal("alert-service init failed", zap.Error(err))
+	}
+
+	exitCode := runApp(app)
+	shutdownApp(app)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+func initApp(ctx context.Context) (*app, error) {
+	cfg := config.Load()
+	shutdownTracer := initTracer(ctx, cfg)
+
+	redisClient := redisstore.NewClient(redisstore.Options{
+		Addr:         cfg.RedisAddr,
+		Password:     cfg.RedisPassword,
+		DialTimeout:  redisDialTimeout,
+		ReadTimeout:  redisReadTimeout,
+		WriteTimeout: redisWriteTimeout,
+	})
+
+	serviceMetrics := servicemetrics.New()
+	store := alert.NewStore(redisClient, alert.DefaultDedupTTL, serviceMetrics)
+	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, store)
+	if err != nil {
+		return nil, fmt.Errorf("kafka consumer init failed: %w", err)
+	}
+	consumer.SetObserver(serviceMetrics)
+
+	healthHandler := health.NewHandler(redisClient, readinessTimeout)
+	server := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           loggingMiddleware(recoveryMiddleware(newMux(healthHandler, serviceMetrics))),
+		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
+	}
+
+	appCtx, cancel := context.WithCancel(context.Background())
+	return &app{
+		cfg:            cfg,
+		shutdownTracer: shutdownTracer,
+		redisClient:    redisClient,
+		consumer:       consumer,
+		healthHandler:  healthHandler,
+		serviceMetrics: serviceMetrics,
+		server:         server,
+		ctx:            appCtx,
+		cancel:         cancel,
+		consumerErr:    make(chan error, 1),
+		consumerDone:   make(chan struct{}),
+	}, nil
+}
+
+func initTracer(ctx context.Context, cfg config.Config) func(context.Context) error {
+	shutdownTracer, err := tracer.Init(ctx, tracer.Config{
 		ServiceName:  "alert-service",
 		OTLPEndpoint: cfg.TraceOTLPEndpoint,
 		SampleRate:   cfg.TraceSampleRate,
@@ -53,75 +124,31 @@ func main() {
 			zap.String("endpoint", cfg.TraceOTLPEndpoint),
 			zap.Error(err),
 		)
-		shutdownTracer = func(context.Context) error { return nil }
-	} else if cfg.TraceOTLPEndpoint != "" {
+		return func(context.Context) error { return nil }
+	}
+	if cfg.TraceOTLPEndpoint != "" {
 		zap.L().Info("tracer initialized",
 			zap.String("endpoint", cfg.TraceOTLPEndpoint),
 			zap.Float64("sample_rate", cfg.TraceSampleRate),
 		)
 	}
+	return shutdownTracer
+}
 
-	redisClient := redisstore.NewClient(redisstore.Options{
-		Addr:         cfg.RedisAddr,
-		Password:     cfg.RedisPassword,
-		DialTimeout:  redisDialTimeout,
-		ReadTimeout:  redisReadTimeout,
-		WriteTimeout: redisWriteTimeout,
-	})
-	defer func() {
-		if err := redisClient.Close(); err != nil {
-			zap.L().Warn("redis close failed", zap.Error(err))
-		}
-	}()
-
-	serviceMetrics := servicemetrics.New()
-	store := alert.NewStore(redisClient, alert.DefaultDedupTTL, serviceMetrics)
-	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, store)
-	if err != nil {
-		zap.L().Fatal("kafka consumer init failed", zap.Error(err))
-	}
-	consumer.SetObserver(serviceMetrics)
-
-	healthHandler := health.NewHandler(redisClient, readinessTimeout)
+func newMux(healthHandler *health.Handler, serviceMetrics *servicemetrics.Metrics) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/readyz", healthHandler.Readyz)
 	mux.Handle("/metrics", serviceMetrics.HTTPHandler())
+	return mux
+}
 
-	server := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           loggingMiddleware(recoveryMiddleware(mux)),
-		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
-		ReadTimeout:       cfg.HTTPReadTimeout,
-		WriteTimeout:      cfg.HTTPWriteTimeout,
-		IdleTimeout:       cfg.HTTPIdleTimeout,
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	consumerErr := make(chan error, 1)
-	consumerDone := make(chan struct{})
-	go func() {
-		runConsumerLoop(ctx, consumerDone, consumerErr, func() error {
-			return consumer.Consume(ctx,
-				func() {
-					healthHandler.SetKafkaReady(true)
-					serviceMetrics.SetKafkaReady(true)
-					zap.L().Info("kafka consumer ready", zap.Strings("brokers", cfg.KafkaBrokers), zap.String("group_id", cfg.KafkaGroupID))
-				},
-				func() {
-					healthHandler.SetKafkaReady(false)
-					serviceMetrics.SetKafkaReady(false)
-				},
-			)
-		})
-	}()
-
+func runApp(app *app) int {
+	startConsumer(app)
 	serverErr := make(chan error, 1)
 	go func() {
-		zap.L().Info("alert-service listening", zap.String("addr", cfg.ListenAddr))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		zap.L().Info("alert-service listening", zap.String("addr", app.cfg.ListenAddr))
+		if err := app.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()
@@ -136,43 +163,67 @@ func main() {
 	case err := <-serverErr:
 		exitCode = 1
 		zap.L().Error("alert-service exited", zap.Error(err))
-	case err := <-consumerErr:
+	case err := <-app.consumerErr:
 		exitCode = 1
 		zap.L().Error("alert-service consumer exited", zap.Error(err))
 	}
+	signal.Stop(quit)
+	return exitCode
+}
 
+func startConsumer(app *app) {
+	go func() {
+		runConsumerLoop(app.ctx, app.consumerDone, app.consumerErr, func() error {
+			return app.consumer.Consume(app.ctx,
+				func() {
+					app.healthHandler.SetKafkaReady(true)
+					app.serviceMetrics.SetKafkaReady(true)
+					zap.L().Info("kafka consumer ready", zap.Strings("brokers", app.cfg.KafkaBrokers), zap.String("group_id", app.cfg.KafkaGroupID))
+				},
+				func() {
+					app.healthHandler.SetKafkaReady(false)
+					app.serviceMetrics.SetKafkaReady(false)
+				},
+			)
+		})
+	}()
+}
+
+func shutdownApp(app *app) {
 	zap.L().Info("alert-service shutting down")
-	cancel()
-	healthHandler.SetKafkaReady(false)
-	serviceMetrics.SetKafkaReady(false)
-	consumerShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
-	if err := consumer.Close(); err != nil {
+	app.cancel()
+	app.healthHandler.SetKafkaReady(false)
+	app.serviceMetrics.SetKafkaReady(false)
+
+	consumerShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
+	if err := app.consumer.Close(); err != nil {
 		zap.L().Warn("kafka consumer close failed", zap.Error(err))
 	}
 	select {
-	case <-consumerDone:
+	case <-app.consumerDone:
 	case <-time.After(consumerShutdownTimeout):
 		zap.L().Warn("kafka consumer shutdown timed out")
 	}
 
-	serverShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
+	serverShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	if err := app.server.Shutdown(shutdownCtx); err != nil {
 		zap.L().Error("alert-service shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
-	traceShutdownTimeout := phaseTimeout(cfg.ShutdownTimeout, shutdownPhases)
+	traceShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
 	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), traceShutdownTimeout)
-	if err := shutdownTracer(traceShutdownCtx); err != nil {
+	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
 		zap.L().Warn("tracer shutdown failed", zap.Error(err))
 	}
 	traceShutdownCancel()
 
-	zap.L().Info("alert-service stopped")
-	if exitCode != 0 {
-		os.Exit(exitCode)
+	if err := app.redisClient.Close(); err != nil {
+		zap.L().Warn("redis close failed", zap.Error(err))
 	}
+
+	zap.L().Info("alert-service stopped")
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
