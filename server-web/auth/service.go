@@ -19,6 +19,7 @@ var (
 	ErrPasswordTooShort   = errors.New("password must be at least 8 characters")
 	ErrRoleInvalid        = errors.New("role must be admin or viewer")
 	ErrUserExists         = errors.New("username already exists")
+	ErrTokenRevoked       = errors.New("token has been revoked")
 )
 
 type Service struct {
@@ -86,9 +87,10 @@ func (s *Service) Login(ctx context.Context, username string, password string) (
 	}
 
 	identity := Identity{
-		ID:       user.ID,
-		Username: user.Username,
-		Role:     user.Role,
+		ID:           user.ID,
+		Username:     user.Username,
+		Role:         user.Role,
+		TokenVersion: user.TokenVersion,
 	}
 	token, expiresAt, err := s.tokens.Generate(identity)
 	if err != nil {
@@ -121,6 +123,20 @@ func (s *Service) AuthenticateToken(token string) (Identity, error) {
 	return s.tokens.Parse(token)
 }
 
+func (s *Service) VerifyTokenVersion(ctx context.Context, identity Identity) error {
+	var user model.User
+	if err := s.db.WithContext(ctx).Select("id, token_version").First(&user, identity.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTokenRevoked
+		}
+		return err
+	}
+	if user.TokenVersion != identity.TokenVersion {
+		return ErrTokenRevoked
+	}
+	return nil
+}
+
 func (s *Service) Register(ctx context.Context, username, password, role string) (Identity, error) {
 	username = strings.TrimSpace(username)
 	if !isValidUsername(username) {
@@ -151,7 +167,7 @@ func (s *Service) Register(ctx context.Context, username, password, role string)
 		return Identity{}, err
 	}
 
-	return Identity{ID: user.ID, Username: user.Username, Role: user.Role}, nil
+	return Identity{ID: user.ID, Username: user.Username, Role: user.Role, TokenVersion: user.TokenVersion}, nil
 }
 
 func (s *Service) ListUsers(ctx context.Context) ([]Identity, error) {
@@ -161,7 +177,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]Identity, error) {
 	}
 	result := make([]Identity, 0, len(users))
 	for _, u := range users {
-		result = append(result, Identity{ID: u.ID, Username: u.Username, Role: u.Role})
+		result = append(result, Identity{ID: u.ID, Username: u.Username, Role: u.Role, TokenVersion: u.TokenVersion})
 	}
 	return result, nil
 }

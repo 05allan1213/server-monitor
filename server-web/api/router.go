@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"gorm.io/gorm"
 
@@ -18,6 +20,8 @@ import (
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
 	ws "server-web/websocket"
+
+	_ "server-web/docs"
 )
 
 type authService interface {
@@ -73,6 +77,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
 	router.GET("/readyz/full", handler.ReadyzFull)
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	router.POST("/api/v1/auth/login", handler.Login)
 	router.POST(
 		"/api/v1/webhook/alertmanager",
@@ -82,7 +87,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	protected := router.Group("")
 	if cfg.AuthEnabled {
-		protected.Use(middleware.Auth(authService))
+		protected.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService))
 	}
 	protected.GET("/api/v1/auth/me", handler.Me)
 	protected.GET("/api/v1/hosts", handler.Hosts)
@@ -91,7 +96,12 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	protected.GET("/api/v1/alerts/active", handler.ActiveAlerts)
 	protected.GET("/api/v1/alerts/events", handler.AlertEvents)
 	protected.GET("/api/v1/alert-histories", handler.ListAlertHistories)
-	protected.GET("/ws/alerts", handler.AlertsWebSocket)
+
+	wsGroup := router.Group("")
+	if cfg.AuthEnabled {
+		wsGroup.Use(middleware.AuthWebSocket(authService), middleware.VerifyTokenVersion(authService))
+	}
+	wsGroup.GET("/ws/alerts", handler.AlertsWebSocket)
 
 	hostGroupsRead := protected.Group("/api/v1/host-groups")
 	hostGroupsRead.GET("", handler.ListHostGroups)

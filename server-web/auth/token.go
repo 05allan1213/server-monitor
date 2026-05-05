@@ -18,17 +18,19 @@ var (
 )
 
 type Identity struct {
-	ID       uint64 `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	ID           uint64 `json:"id"`
+	Username     string `json:"username"`
+	Role         string `json:"role"`
+	TokenVersion int    `json:"token_version"`
 }
 
 type TokenClaims struct {
-	Subject  string `json:"sub"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	IssuedAt int64  `json:"iat"`
-	Expires  int64  `json:"exp"`
+	Subject      string `json:"sub"`
+	Username     string `json:"username"`
+	Role         string `json:"role"`
+	TokenVersion int    `json:"token_version"`
+	IssuedAt     int64  `json:"iat"`
+	Expires      int64  `json:"exp"`
 }
 
 type TokenManager struct {
@@ -70,11 +72,12 @@ func (m *TokenManager) Generate(identity Identity) (string, time.Time, error) {
 		"typ": "JWT",
 	}
 	claims := TokenClaims{
-		Subject:  strconv.FormatUint(identity.ID, 10),
-		Username: identity.Username,
-		Role:     identity.Role,
-		IssuedAt: now.Unix(),
-		Expires:  expiresAt.Unix(),
+		Subject:      strconv.FormatUint(identity.ID, 10),
+		Username:     identity.Username,
+		Role:         identity.Role,
+		TokenVersion: identity.TokenVersion,
+		IssuedAt:     now.Unix(),
+		Expires:      expiresAt.Unix(),
 	}
 
 	headerJSON, err := json.Marshal(header)
@@ -137,7 +140,7 @@ func (m *TokenManager) Parse(token string) (Identity, error) {
 	if err != nil || id == 0 || claims.Username == "" || claims.Role == "" {
 		return Identity{}, ErrInvalidToken
 	}
-	return Identity{ID: id, Username: claims.Username, Role: claims.Role}, nil
+	return Identity{ID: id, Username: claims.Username, Role: claims.Role, TokenVersion: claims.TokenVersion}, nil
 }
 
 func (m *TokenManager) sign(unsigned string) []byte {
