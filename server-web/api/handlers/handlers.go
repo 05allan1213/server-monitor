@@ -66,6 +66,7 @@ type Handler struct {
 	dashboardTTL   time.Duration
 	dedupeTTL      time.Duration
 	cacheTimeout   time.Duration
+	ruleSync       AlertRuleSyncConfig
 	websocketHub   *ws.Hub
 }
 
@@ -165,6 +166,7 @@ type Config struct {
 	DashboardTTL   time.Duration
 	DedupeTTL      time.Duration
 	CacheTimeout   time.Duration
+	RuleSync       AlertRuleSyncConfig
 	AlertProducer  alertProducer
 	MySQLClient    mysqlClient
 	DB             *gorm.DB
@@ -188,6 +190,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 		dashboardTTL:   cfg.DashboardTTL,
 		dedupeTTL:      cfg.DedupeTTL,
 		cacheTimeout:   cfg.CacheTimeout,
+		ruleSync:       cfg.RuleSync,
 		websocketHub:   websocketHub,
 	}, nil
 }

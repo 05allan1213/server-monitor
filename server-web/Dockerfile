@@ -35,6 +35,7 @@ RUN apk add --no-cache tzdata
 WORKDIR /app
 
 COPY --from=go-builder /app/web .
+COPY --from=prom/prometheus:v2.51.0 /bin/promtool /usr/local/bin/promtool
 COPY --from=frontend-builder /app/dist ./static
 
 ENV STATIC_DIR=/app/static

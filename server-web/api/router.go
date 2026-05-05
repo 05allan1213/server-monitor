@@ -53,10 +53,16 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		DashboardTTL:   cfg.DashboardOverviewTTL,
 		DedupeTTL:      cfg.AlertEventDedupeTTL,
 		CacheTimeout:   cfg.CacheWriteTimeout,
-		AlertProducer:  alertProducer,
-		MySQLClient:    mysqlClient,
-		DB:             dbFromMySQL(mysqlClient),
-		AuthService:    authService,
+		RuleSync: handlers.NewAlertRuleSyncConfig(
+			cfg.AlertRulesFilePath,
+			cfg.PromtoolPath,
+			cfg.PrometheusReloadURL,
+			cfg.AlertRuleSyncTimeout,
+		),
+		AlertProducer: alertProducer,
+		MySQLClient:   mysqlClient,
+		DB:            dbFromMySQL(mysqlClient),
+		AuthService:   authService,
 	}, websocketHub)
 	if err != nil {
 		return nil, err
@@ -108,6 +114,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		alertRulesWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
 	}
 	alertRulesWrite.POST("", handler.CreateAlertRule)
+	alertRulesWrite.POST("/sync", handler.SyncAlertRules)
 	alertRulesWrite.PUT("/:id", handler.UpdateAlertRule)
 	alertRulesWrite.DELETE("/:id", handler.DeleteAlertRule)
 

@@ -125,11 +125,13 @@ services:
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docker/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
+      - ./docker/custom-alerts.yml:/etc/prometheus/rules/custom-alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=6h"
+      - "--web.enable-lifecycle"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy"]
       interval: 10s
@@ -415,6 +417,10 @@ services:
       - "8080:8080"
     environment:
       PROMETHEUS_URL: http://prometheus:9090
+      PROMETHEUS_RELOAD_URL: http://prometheus:9090/-/reload
+      ALERT_RULES_FILE_PATH: /etc/server-monitor/rules/custom-alerts.yml
+      PROMTOOL_PATH: /usr/local/bin/promtool
+      ALERT_RULE_SYNC_TIMEOUT_SECONDS: "10"
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-server-monitor-local-redis}
       MYSQL_HOST: mysql
@@ -435,6 +441,8 @@ services:
       TRACE_OTLP_ENDPOINT: jaeger:4317
       TRACE_SAMPLE_RATE: ${TRACE_SAMPLE_RATE:-1.0}
       KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./docker/custom-alerts.yml:/etc/server-monitor/rules/custom-alerts.yml
     depends_on:
       jaeger:
         condition: service_started

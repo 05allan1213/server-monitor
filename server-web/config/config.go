@@ -11,6 +11,10 @@ import (
 type Config struct {
 	ListenAddr                      string
 	PrometheusURL                   string
+	PrometheusReloadURL             string
+	AlertRulesFilePath              string
+	PromtoolPath                    string
+	AlertRuleSyncTimeout            time.Duration
 	RequestTimeout                  time.Duration
 	ReadyTimeout                    time.Duration
 	HTTPReadHeaderTimeout           time.Duration
@@ -62,9 +66,14 @@ type RateLimitConfig struct {
 }
 
 func Load() Config {
+	prometheusURL := getEnv("PROMETHEUS_URL", "http://prometheus:9090")
 	return Config{
 		ListenAddr:                      getEnv("LISTEN_ADDR", ":8080"),
-		PrometheusURL:                   getEnv("PROMETHEUS_URL", "http://prometheus:9090"),
+		PrometheusURL:                   prometheusURL,
+		PrometheusReloadURL:             getEnvNonEmpty("PROMETHEUS_RELOAD_URL", strings.TrimRight(prometheusURL, "/")+"/-/reload"),
+		AlertRulesFilePath:              getEnv("ALERT_RULES_FILE_PATH", ""),
+		PromtoolPath:                    getEnv("PROMTOOL_PATH", "promtool"),
+		AlertRuleSyncTimeout:            getEnvDurationSeconds("ALERT_RULE_SYNC_TIMEOUT_SECONDS", 10),
 		RequestTimeout:                  getEnvDurationSeconds("REQUEST_TIMEOUT_SECONDS", 5),
 		ReadyTimeout:                    getEnvDurationSeconds("READY_TIMEOUT_SECONDS", 3),
 		HTTPReadHeaderTimeout:           getEnvDurationSeconds("HTTP_READ_HEADER_TIMEOUT_SECONDS", 5),
