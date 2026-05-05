@@ -77,6 +77,16 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: PROMETHEUS_RELOAD_URL
+            - name: ALERT_RULES_FILE_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: ALERT_RULES_FILE_PATH
+            - name: ALERT_RULE_SYNC_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: ALERT_RULE_SYNC_ENABLED
             - name: PROMTOOL_PATH
               valueFrom:
                 configMapKeyRef:

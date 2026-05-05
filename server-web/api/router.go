@@ -54,6 +54,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		DedupeTTL:      cfg.AlertEventDedupeTTL,
 		CacheTimeout:   cfg.CacheWriteTimeout,
 		RuleSync: handlers.NewAlertRuleSyncConfig(
+			cfg.AlertRuleSyncEnabled,
 			cfg.AlertRulesFilePath,
 			cfg.PromtoolPath,
 			cfg.PrometheusReloadURL,

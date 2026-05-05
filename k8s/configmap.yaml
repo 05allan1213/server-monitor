@@ -13,6 +13,8 @@ metadata:
 data:
   PROMETHEUS_URL: http://prometheus:9090
   PROMETHEUS_RELOAD_URL: http://prometheus:9090/-/reload
+  ALERT_RULES_FILE_PATH: ""
+  ALERT_RULE_SYNC_ENABLED: "false"
   PROMTOOL_PATH: /usr/local/bin/promtool
   ALERT_RULE_SYNC_TIMEOUT_SECONDS: "10"
   REDIS_ADDR: redis:6379

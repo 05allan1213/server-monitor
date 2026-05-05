@@ -13,6 +13,7 @@ type Config struct {
 	PrometheusURL                   string
 	PrometheusReloadURL             string
 	AlertRulesFilePath              string
+	AlertRuleSyncEnabled            bool
 	PromtoolPath                    string
 	AlertRuleSyncTimeout            time.Duration
 	RequestTimeout                  time.Duration
@@ -72,6 +73,7 @@ func Load() Config {
 		PrometheusURL:                   prometheusURL,
 		PrometheusReloadURL:             getEnvNonEmpty("PROMETHEUS_RELOAD_URL", strings.TrimRight(prometheusURL, "/")+"/-/reload"),
 		AlertRulesFilePath:              getEnv("ALERT_RULES_FILE_PATH", ""),
+		AlertRuleSyncEnabled:            getEnvBool("ALERT_RULE_SYNC_ENABLED", true),
 		PromtoolPath:                    getEnv("PROMTOOL_PATH", "promtool"),
 		AlertRuleSyncTimeout:            getEnvDurationSeconds("ALERT_RULE_SYNC_TIMEOUT_SECONDS", 10),
 		RequestTimeout:                  getEnvDurationSeconds("REQUEST_TIMEOUT_SECONDS", 5),

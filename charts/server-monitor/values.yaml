@@ -143,6 +143,14 @@ auth:
   enabled: true
   jwtExpireHours: "24"
 
+alertRuleSync:
+  # K8s/Helm 默认不允许 server-web 直写 Prometheus ConfigMap 挂载的规则目录。
+  enabled: false
+  rulesFilePath: ""
+  prometheusReloadUrl: http://prometheus:9090/-/reload
+  promtoolPath: /usr/local/bin/promtool
+  timeoutSeconds: "10"
+
 prometheus:
   enabled: true
   image: prom/prometheus:v2.51.0

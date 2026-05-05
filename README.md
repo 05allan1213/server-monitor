@@ -67,6 +67,7 @@ make docker-up
 - `server-web` 容器会同时托管前端静态文件
 - Docker Compose 默认只绑定宿主机 `127.0.0.1`，并开启 `server-web` 鉴权
 - 监控大屏默认管理员账号为 `admin`，默认密码为 `server-monitor-local-admin`
+- Docker Compose 默认启用告警规则同步，会把自定义规则写入 `docker/custom-alerts.yml` 并触发 Prometheus reload
 - Grafana 地址为 <http://localhost:3000>，默认账号为 `admin`，默认密码为 `server-monitor-local-grafana`
 - Kibana 地址为 <http://localhost:5601>，用于查询 `sm-logs-*` 日志索引
 - 首次启动后，Prometheus 抓取和告警规则加载通常需要 `15-30` 秒
@@ -398,6 +399,11 @@ server-monitor/
 | ------------------------- | ------------------------ | ----------- |
 | `LISTEN_ADDR`             | `:8080`                  | 监听地址        |
 | `PROMETHEUS_URL`          | `http://prometheus:9090` | Prometheus 地址 |
+| `PROMETHEUS_RELOAD_URL`   | `PROMETHEUS_URL + /-/reload` | Prometheus reload 地址 |
+| `ALERT_RULES_FILE_PATH`   | (空)                      | 可写告警规则文件路径，未配置时不能同步规则 |
+| `ALERT_RULE_SYNC_ENABLED` | `true`                   | 是否启用 server-web 直写规则文件并 reload Prometheus |
+| `PROMTOOL_PATH`           | `promtool`               | promtool 可执行文件路径 |
+| `ALERT_RULE_SYNC_TIMEOUT_SECONDS` | `10`            | 告警规则同步超时（秒） |
 | `REDIS_ADDR`              | (空)                      | Redis 地址    |
 | `REDIS_PASSWORD`          | (空)                      | Redis 密码    |
 | `REDIS_DB`                | `0`                      | Redis 数据库   |
@@ -436,6 +442,8 @@ server-monitor/
 补充说明：
 - Docker Compose 部署时，`server-web` 镜像内默认使用 `STATIC_DIR=/app/static`
 - Docker Compose 本地部署默认只绑定 `127.0.0.1`，并使用 `AUTH_ENABLED=true`、`ADMIN_PASSWORD=server-monitor-local-admin`、`REDIS_PASSWORD=server-monitor-local-redis`，生产环境必须通过环境变量覆盖默认密码和密钥
+- Docker Compose 本地部署默认使用 `ALERT_RULE_SYNC_ENABLED=true` 和 `ALERT_RULES_FILE_PATH=/etc/server-monitor/rules/custom-alerts.yml`，支持在页面手动同步自定义告警规则到 Prometheus
+- K8s / Helm 默认使用 ConfigMap 挂载 Prometheus 规则目录，server-web 不能安全直写该目录，因此默认设置 `ALERT_RULE_SYNC_ENABLED=false`；需要动态规则同步时，应改用可写规则卷、受控 controller/Job 或 Prometheus Operator `PrometheusRule`
 - K8s / Helm 部署默认使用 `monitor-secret` 注入 `REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`JWT_SECRET`、`ADMIN_PASSWORD`、`GRAFANA_ADMIN_USER`、`GRAFANA_ADMIN_PASSWORD`，生产环境必须替换 Secret 中的默认密码和密钥
 - Redis 生产环境建议在宿主机开启 `vm.overcommit_memory=1`，否则 Redis 可能在后台保存或内存紧张时输出 warning 并存在失败风险
 - 本地开发模式通常不设置 `STATIC_DIR`，由 Vite 开发服务器在 `5173` 端口提供前端页面

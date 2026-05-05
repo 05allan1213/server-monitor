@@ -22,6 +22,7 @@ import (
 const maxAlertRuleExprLength = 2048
 
 type AlertRuleSyncConfig struct {
+	Enabled    bool
 	FilePath   string
 	Promtool   string
 	ReloadURL  string
@@ -31,6 +32,7 @@ type AlertRuleSyncConfig struct {
 
 type alertRuleSyncResponse struct {
 	Success    bool   `json:"success"`
+	Enabled    bool   `json:"enabled"`
 	RuleCount  int    `json:"rule_count"`
 	FilePath   string `json:"file_path,omitempty"`
 	SyncedAt   string `json:"synced_at,omitempty"`
@@ -59,8 +61,9 @@ type alertRuleRequest struct {
 	Enabled     *bool  `json:"enabled"`
 }
 
-func NewAlertRuleSyncConfig(filePath, promtool, reloadURL string, timeout time.Duration) AlertRuleSyncConfig {
+func NewAlertRuleSyncConfig(enabled bool, filePath, promtool, reloadURL string, timeout time.Duration) AlertRuleSyncConfig {
 	return AlertRuleSyncConfig{
+		Enabled:   enabled,
 		FilePath:  strings.TrimSpace(filePath),
 		Promtool:  strings.TrimSpace(promtool),
 		ReloadURL: strings.TrimSpace(reloadURL),
@@ -186,6 +189,10 @@ func (h *Handler) SyncAlertRules(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.ruleSync.Enabled {
+		c.JSON(http.StatusServiceUnavailable, response{Status: "error", Error: "alert rule sync is disabled"})
+		return
+	}
 	if strings.TrimSpace(h.ruleSync.FilePath) == "" {
 		c.JSON(http.StatusServiceUnavailable, response{Status: "error", Error: "alert rule sync is not configured"})
 		return
@@ -231,6 +238,7 @@ func (h *Handler) syncAlertRules(ctx context.Context, rules []model.AlertRule) (
 
 	rendered, err := renderAlertRulesYAML(rules)
 	result := alertRuleSyncResponse{
+		Enabled:   cfg.Enabled,
 		RuleCount: len(rules),
 		FilePath:  cfg.FilePath,
 		ReloadURL: cfg.ReloadURL,
