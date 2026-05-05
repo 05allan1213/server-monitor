@@ -180,6 +180,9 @@ type statusRecorder struct {
 }
 
 func (r *statusRecorder) WriteHeader(status int) {
+	if r.status != 0 {
+		return
+	}
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }

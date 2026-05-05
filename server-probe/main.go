@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -288,10 +289,19 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 					zap.String("path", r.URL.Path),
 					zap.Any("error", recovered),
 				)
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				writeErrorJSON(w, http.StatusInternalServerError)
 			}
 		}()
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func writeErrorJSON(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status": "error",
+		"error":  http.StatusText(status),
 	})
 }
