@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +15,7 @@ import (
 	appalert "server-web/alert"
 	authpkg "server-web/auth"
 	appcache "server-web/cache"
+	apphost "server-web/host"
 	eventbus "server-web/kafka"
 	promclient "server-web/prometheus"
 	"server-web/webhook"
@@ -60,6 +59,7 @@ type Handler struct {
 	cacheClient    cacheClient
 	cacheService   *appcache.Service
 	alertService   *appalert.Service
+	hostService    *apphost.Service
 	mysqlClient    mysqlClient
 	authService    AuthService
 	readyTimeout   time.Duration
@@ -75,24 +75,6 @@ type response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
-type hostMetricsRange struct {
-	duration time.Duration
-	step     time.Duration
-}
-
-type hostMetricQuery struct {
-	name   string
-	metric string
-	params map[string]string
-}
-
-type hostMetricsResponse struct {
-	Instance    string                              `json:"instance"`
-	Range       string                              `json:"range"`
-	StepSeconds int64                               `json:"stepSeconds"`
-	Metrics     map[string][]promclient.RangeSeries `json:"metrics"`
-}
-
 var validAlertEventStatuses = map[string]struct{}{
 	"firing":   {},
 	"resolved": {},
@@ -102,41 +84,6 @@ var validAlertEventSeverities = map[string]struct{}{
 	"critical": {},
 	"warning":  {},
 	"info":     {},
-}
-
-var validHostStatuses = map[string]struct{}{
-	"up":   {},
-	"down": {},
-}
-
-var validHostSorts = map[string]struct{}{
-	"instance":    {},
-	"cpu_desc":    {},
-	"memory_desc": {},
-}
-
-var validHostRisks = map[string]struct{}{
-	"high_cpu":    {},
-	"high_memory": {},
-}
-
-var validHostMetricsRanges = map[string]hostMetricsRange{
-	"15m": {
-		duration: 15 * time.Minute,
-		step:     15 * time.Second,
-	},
-	"1h": {
-		duration: time.Hour,
-		step:     time.Minute,
-	},
-	"6h": {
-		duration: 6 * time.Hour,
-		step:     5 * time.Minute,
-	},
-	"24h": {
-		duration: 24 * time.Hour,
-		step:     15 * time.Minute,
-	},
 }
 
 type Config struct {
@@ -157,18 +104,23 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 	if promClient == nil {
 		return nil, errors.New("prometheus client is required")
 	}
+	cacheService := appcache.NewService(cacheClient, appcache.Options{
+		HostsTTL:     cfg.HostsTTL,
+		DashboardTTL: cfg.DashboardTTL,
+	})
 	return &Handler{
-		promClient:  promClient,
-		db:          cfg.DB,
-		cacheClient: cacheClient,
-		cacheService: appcache.NewService(cacheClient, appcache.Options{
-			HostsTTL:     cfg.HostsTTL,
-			DashboardTTL: cfg.DashboardTTL,
-		}),
+		promClient:   promClient,
+		db:           cfg.DB,
+		cacheClient:  cacheClient,
+		cacheService: cacheService,
 		alertService: appalert.NewService(cacheClient, appalert.Options{
 			DedupeTTL: cfg.DedupeTTL,
 			DB:        cfg.DB,
 			Producer:  cfg.AlertProducer,
+		}),
+		hostService: apphost.NewService(promClient, cacheService, apphost.Options{
+			RequestTimeout: cfg.RequestTimeout,
+			CacheTimeout:   cfg.CacheTimeout,
 		}),
 		mysqlClient:    cfg.MySQLClient,
 		authService:    cfg.AuthService,
@@ -295,34 +247,19 @@ func (h *Handler) Hosts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
-	statusFilter := parseAlertEventFilter(c.Query("status"), validHostStatuses)
-	queryFilter := normalizeHostQuery(c.Query("q"))
-	sortBy := parseHostSort(c.Query("sort"))
-	riskFilter := parseHostRisk(c.Query("risk"))
 	groupInstances, groupFiltered, ok := h.parseHostGroupFilter(c)
 	if !ok {
 		return
 	}
-	if groupFiltered && len(groupInstances) == 0 {
-		c.JSON(http.StatusOK, response{
-			Status: "success",
-			Data:   []promclient.Host{},
-		})
-		return
-	}
 
-	if cachedHosts, ok := h.cacheService.GetHosts(ctx); ok {
-		if groupFiltered {
-			cachedHosts = filterHostsByInstances(cachedHosts, groupInstances)
-		}
-		c.JSON(http.StatusOK, response{
-			Status: "success",
-			Data:   sortHosts(filterHosts(cachedHosts, statusFilter, queryFilter, riskFilter), sortBy),
-		})
-		return
-	}
-
-	hosts, err := h.promClient.GetHosts(ctx)
+	hosts, err := h.hostService.Hosts(ctx, apphost.ListOptions{
+		Status:         apphost.ParseStatus(c.Query("status")),
+		Query:          apphost.NormalizeQuery(c.Query("q")),
+		Sort:           apphost.ParseSort(c.Query("sort")),
+		Risk:           apphost.ParseRisk(c.Query("risk")),
+		GroupFiltered:  groupFiltered,
+		GroupInstances: groupInstances,
+	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
 			Status: "error",
@@ -331,17 +268,9 @@ func (h *Handler) Hosts(c *gin.Context) {
 		return
 	}
 
-	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
-	defer cacheCancel()
-	h.cacheService.CacheHosts(cacheCtx, hosts)
-
-	if groupFiltered {
-		hosts = filterHostsByInstances(hosts, groupInstances)
-	}
-
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data:   sortHosts(filterHosts(hosts, statusFilter, queryFilter, riskFilter), sortBy),
+		Data:   hosts,
 	})
 }
 
@@ -355,7 +284,7 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 		return
 	}
 
-	rangeName, rangeConfig, ok := parseHostMetricsRange(c.Query("range"))
+	metrics, ok, err := h.hostService.Metrics(c.Request.Context(), instance, c.Query("range"), c.Query("mountpoint"), time.Now().UTC())
 	if !ok {
 		c.JSON(http.StatusBadRequest, response{
 			Status: "error",
@@ -363,12 +292,6 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 		})
 		return
 	}
-
-	end := time.Now().UTC()
-	start := end.Add(-rangeConfig.duration)
-	queries := buildHostMetricQueries(c.Query("mountpoint"))
-
-	metrics, err := h.queryHostMetrics(c.Request.Context(), queries, instance, start, end, rangeConfig.step)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, response{
 			Status: "error",
@@ -379,54 +302,8 @@ func (h *Handler) HostMetrics(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",
-		Data: hostMetricsResponse{
-			Instance:    instance,
-			Range:       rangeName,
-			StepSeconds: int64(rangeConfig.step.Seconds()),
-			Metrics:     metrics,
-		},
+		Data:   metrics,
 	})
-}
-
-func (h *Handler) queryHostMetrics(ctx context.Context, queries []hostMetricQuery, instance string, start, end time.Time, step time.Duration) (map[string][]promclient.RangeSeries, error) {
-	queryCtx, cancelAll := context.WithCancel(ctx)
-	defer cancelAll()
-
-	metrics := make(map[string][]promclient.RangeSeries, len(queries))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var firstErr error
-
-	for _, query := range queries {
-		query := query
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			ctx, cancel := context.WithTimeout(queryCtx, h.requestTimeout)
-			defer cancel()
-
-			series, err := h.promClient.QueryRange(ctx, query.metric, instance, query.params, start, end, step)
-
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				if firstErr == nil {
-					firstErr = fmt.Errorf("query host metric %s failed: %w", query.name, err)
-					cancelAll()
-				}
-				return
-			}
-			metrics[query.name] = series
-		}()
-	}
-
-	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
-
-	return metrics, nil
 }
 
 func (h *Handler) DashboardOverview(c *gin.Context) {
@@ -450,7 +327,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 		return
 	}
 
-	overview := buildDashboardOverview(hosts)
+	overview := apphost.BuildDashboardOverview(hosts)
 	activeAlerts, degraded := h.cacheService.CountActiveAlerts(ctx)
 	overview.ActiveAlerts = activeAlerts
 	overview.AlertDegraded = degraded
@@ -628,176 +505,10 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	}
 }
 
-func filterHostsByStatus(hosts []promclient.Host, statusFilter string) []promclient.Host {
-	if statusFilter == "" {
-		return hosts
-	}
-
-	filtered := make([]promclient.Host, 0, len(hosts))
-	for _, host := range hosts {
-		isUp := host.Status == "up"
-		if statusFilter == "up" && isUp {
-			filtered = append(filtered, host)
-			continue
-		}
-		if statusFilter == "down" && !isUp {
-			filtered = append(filtered, host)
-		}
-	}
-
-	return filtered
-}
-
-func filterHostsByQuery(hosts []promclient.Host, queryFilter string) []promclient.Host {
-	if queryFilter == "" {
-		return hosts
-	}
-
-	filtered := make([]promclient.Host, 0, len(hosts))
-	for _, host := range hosts {
-		if strings.Contains(strings.ToLower(host.Instance), queryFilter) {
-			filtered = append(filtered, host)
-		}
-	}
-
-	return filtered
-}
-
-func filterHostsByRisk(hosts []promclient.Host, riskFilter string) []promclient.Host {
-	if riskFilter == "" {
-		return hosts
-	}
-
-	filtered := make([]promclient.Host, 0, len(hosts))
-	for _, host := range hosts {
-		switch riskFilter {
-		case "high_cpu":
-			if host.CPU >= 80 {
-				filtered = append(filtered, host)
-			}
-		case "high_memory":
-			if host.Memory >= 85 {
-				filtered = append(filtered, host)
-			}
-		}
-	}
-
-	return filtered
-}
-
 func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {
 	if _, ok := allowed[raw]; !ok {
 		return ""
 	}
 
 	return raw
-}
-
-func filterHosts(hosts []promclient.Host, statusFilter, queryFilter, riskFilter string) []promclient.Host {
-	return filterHostsByRisk(filterHostsByQuery(filterHostsByStatus(hosts, statusFilter), queryFilter), riskFilter)
-}
-
-func normalizeHostQuery(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
-}
-
-func parseHostSort(raw string) string {
-	if _, ok := validHostSorts[raw]; !ok {
-		return "instance"
-	}
-
-	return raw
-}
-
-func parseHostRisk(raw string) string {
-	if _, ok := validHostRisks[raw]; !ok {
-		return ""
-	}
-
-	return raw
-}
-
-func parseHostMetricsRange(raw string) (string, hostMetricsRange, bool) {
-	if raw == "" {
-		raw = "1h"
-	}
-
-	parsed, ok := validHostMetricsRanges[raw]
-	return raw, parsed, ok
-}
-
-func buildHostMetricQueries(mountpoint string) []hostMetricQuery {
-	mountpoint = strings.TrimSpace(mountpoint)
-	diskParams := map[string]string{}
-	if mountpoint != "" {
-		diskParams["mountpoint"] = mountpoint
-	}
-
-	return []hostMetricQuery{
-		{name: "cpu", metric: promclient.MetricCPUUsage},
-		{name: "memory", metric: promclient.MetricMemoryUsage},
-		{name: "disk", metric: promclient.MetricDiskUsage, params: diskParams},
-		{name: "network_recv", metric: promclient.MetricNetworkRecv},
-		{name: "network_sent", metric: promclient.MetricNetworkSent},
-		{name: "load1", metric: promclient.MetricLoad1},
-		{name: "process_count", metric: promclient.MetricProcessCount},
-		{name: "uptime", metric: promclient.MetricUptime},
-	}
-}
-
-func buildDashboardOverview(hosts []promclient.Host) appcache.DashboardOverview {
-	overview := appcache.DashboardOverview{
-		TotalHosts: len(hosts),
-	}
-	if len(hosts) == 0 {
-		return overview
-	}
-
-	var totalCPU float64
-	var totalMemory float64
-	var healthyHosts int
-	for _, host := range hosts {
-		if host.Status == "up" {
-			overview.HealthyHosts++
-			healthyHosts++
-			totalCPU += host.CPU
-			totalMemory += host.Memory
-		} else {
-			overview.DownHosts++
-		}
-	}
-
-	if healthyHosts > 0 {
-		overview.AvgCPU = totalCPU / float64(healthyHosts)
-		overview.AvgMemory = totalMemory / float64(healthyHosts)
-	}
-
-	return overview
-}
-
-func sortHosts(hosts []promclient.Host, sortBy string) []promclient.Host {
-	sorted := append([]promclient.Host(nil), hosts...)
-
-	switch sortBy {
-	case "cpu_desc":
-		sort.SliceStable(sorted, func(i, j int) bool {
-			if sorted[i].CPU == sorted[j].CPU {
-				return sorted[i].Instance < sorted[j].Instance
-			}
-			return sorted[i].CPU > sorted[j].CPU
-		})
-	case "memory_desc":
-		sort.SliceStable(sorted, func(i, j int) bool {
-			if sorted[i].Memory == sorted[j].Memory {
-				return sorted[i].Instance < sorted[j].Instance
-			}
-			return sorted[i].Memory > sorted[j].Memory
-		})
-	default:
-		sort.SliceStable(sorted, func(i, j int) bool {
-			return sorted[i].Instance < sorted[j].Instance
-		})
-	}
-
-	return sorted
 }
