@@ -1,13 +1,23 @@
 package httpmiddleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 
 	"server-monitor/pkg/logger"
 )
+
+const RequestIDHeader = "X-Request-ID"
+
+type requestIDContextKey struct{}
+
+var requestIDCounter uint64
 
 type RecoveryFields func(*http.Request) []zap.Field
 
@@ -66,4 +76,28 @@ func WriteErrorJSON(w http.ResponseWriter, status int) {
 		"status": "error",
 		"error":  http.StatusText(status),
 	})
+}
+
+func EnsureRequestID(w http.ResponseWriter, r *http.Request, now time.Time) (*http.Request, string) {
+	requestID := r.Header.Get(RequestIDHeader)
+	if requestID == "" {
+		requestID = NewRequestID(now)
+	}
+	w.Header().Set(RequestIDHeader, requestID)
+	return r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, requestID)), requestID
+}
+
+func NewRequestID(now time.Time) string {
+	seq := atomic.AddUint64(&requestIDCounter, 1)
+	return strconv.FormatInt(now.UnixNano(), 36) + "-" + strconv.FormatUint(seq, 36)
+}
+
+func RequestIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if value, ok := r.Context().Value(requestIDContextKey{}).(string); ok {
+		return value
+	}
+	return r.Header.Get(RequestIDHeader)
 }

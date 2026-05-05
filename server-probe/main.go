@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,12 +23,6 @@ import (
 	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
-
-const requestIDHeader = "X-Request-ID"
-
-type requestIDContextKey struct{}
-
-var requestIDCounter uint64
 
 func main() {
 	log, err := logger.Init("server-probe")
@@ -216,12 +208,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		recorder := httpmiddleware.NewStatusRecorder(w)
-		requestID := r.Header.Get(requestIDHeader)
-		if requestID == "" {
-			requestID = newRequestID(start)
-		}
-		recorder.Header().Set(requestIDHeader, requestID)
-		r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, requestID))
+		r, requestID := httpmiddleware.EnsureRequestID(recorder, r, start)
 
 		next.ServeHTTP(recorder, r)
 
@@ -241,25 +228,10 @@ func tracedHandler(next http.Handler) http.Handler {
 	return otelhttp.NewHandler(next, "server-probe")
 }
 
-func newRequestID(now time.Time) string {
-	seq := atomic.AddUint64(&requestIDCounter, 1)
-	return strconv.FormatInt(now.UnixNano(), 36) + "-" + strconv.FormatUint(seq, 36)
-}
-
-func requestIDFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	if value, ok := r.Context().Value(requestIDContextKey{}).(string); ok {
-		return value
-	}
-	return r.Header.Get(requestIDHeader)
-}
-
 func recoveryMiddleware(next http.Handler) http.Handler {
 	return httpmiddleware.Recovery(next, func(r *http.Request) []zap.Field {
 		return []zap.Field{
-			zap.String("request_id", requestIDFromRequest(r)),
+			zap.String("request_id", httpmiddleware.RequestIDFromRequest(r)),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 		}
