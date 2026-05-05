@@ -21,6 +21,7 @@ import (
 
 	"server-monitor/pkg/httpmiddleware"
 	"server-monitor/pkg/logger"
+	"server-monitor/pkg/shutdown"
 	"server-monitor/pkg/tracer"
 )
 
@@ -56,6 +57,9 @@ func main() {
 
 func initApp(ctx context.Context) (*app, error) {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	shutdownTracer := initTracer(ctx, cfg)
 	if err := applyHostPaths(cfg); err != nil {
 		return nil, fmt.Errorf("apply host paths: %w", err)
@@ -189,17 +193,10 @@ func startCollectorLoop(app *app) {
 func shutdownApp(app *app) {
 	app.cancel()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
-	if err := app.server.Shutdown(shutdownCtx); err != nil {
-		zap.L().Error("server-probe shutdown error", zap.Error(err))
-	}
-	shutdownCancel()
-
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
-	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
-		zap.L().Warn("tracer shutdown failed", zap.Error(err))
-	}
-	traceShutdownCancel()
+	shutdown.Graceful(app.cfg.ShutdownTimeout, []shutdown.Phase{
+		{Name: "http-server", Fn: func(ctx context.Context) error { return app.server.Shutdown(ctx) }},
+		{Name: "tracer", Fn: app.shutdownTracer},
+	})
 
 	zap.L().Info("server-probe stopped")
 }

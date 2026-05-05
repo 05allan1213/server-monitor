@@ -22,6 +22,7 @@ import (
 
 	"server-monitor/pkg/httpmiddleware"
 	"server-monitor/pkg/logger"
+	"server-monitor/pkg/shutdown"
 	"server-monitor/pkg/tracer"
 )
 
@@ -69,6 +70,9 @@ func main() {
 
 func initApp(ctx context.Context) (*app, error) {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	shutdownTracer := initTracer(ctx, cfg)
 
 	redisClient := redisstore.NewClient(redisstore.Options{
@@ -195,33 +199,22 @@ func shutdownApp(app *app) {
 	app.healthHandler.SetKafkaReady(false)
 	app.serviceMetrics.SetKafkaReady(false)
 
-	consumerShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
+	perPhase := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
+
 	if err := app.consumer.Close(); err != nil {
 		zap.L().Warn("kafka consumer close failed", zap.Error(err))
 	}
 	select {
 	case <-app.consumerDone:
-	case <-time.After(consumerShutdownTimeout):
+	case <-time.After(perPhase):
 		zap.L().Warn("kafka consumer shutdown timed out")
 	}
 
-	serverShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
-	if err := app.server.Shutdown(shutdownCtx); err != nil {
-		zap.L().Error("alert-service shutdown error", zap.Error(err))
-	}
-	shutdownCancel()
-
-	traceShutdownTimeout := phaseTimeout(app.cfg.ShutdownTimeout, shutdownPhases)
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), traceShutdownTimeout)
-	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
-		zap.L().Warn("tracer shutdown failed", zap.Error(err))
-	}
-	traceShutdownCancel()
-
-	if err := app.redisClient.Close(); err != nil {
-		zap.L().Warn("redis close failed", zap.Error(err))
-	}
+	shutdown.Graceful(app.cfg.ShutdownTimeout, []shutdown.Phase{
+		{Name: "http-server", Fn: func(ctx context.Context) error { return app.server.Shutdown(ctx) }},
+		{Name: "tracer", Fn: app.shutdownTracer},
+		{Name: "redis", Fn: func(ctx context.Context) error { return app.redisClient.Close() }},
+	})
 
 	zap.L().Info("alert-service stopped")
 }
