@@ -36,6 +36,11 @@ type cacheClient interface {
 	Publish(ctx context.Context, channel string, message []byte) error
 }
 
+type mysqlClient interface {
+	Enabled() bool
+	Ping(ctx context.Context) error
+}
+
 type alertProducer interface {
 	SendAlertEvent(eventbus.AlertEvent) error
 }
@@ -43,6 +48,7 @@ type alertProducer interface {
 type Handler struct {
 	promClient     *promclient.Client
 	cacheClient    cacheClient
+	mysqlClient    mysqlClient
 	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
@@ -150,6 +156,7 @@ type Config struct {
 	DedupeTTL      time.Duration
 	CacheTimeout   time.Duration
 	AlertProducer  alertProducer
+	MySQLClient    mysqlClient
 }
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) (*Handler, error) {
@@ -159,6 +166,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 	return &Handler{
 		promClient:     promClient,
 		cacheClient:    cacheClient,
+		mysqlClient:    cfg.MySQLClient,
 		alertProducer:  cfg.AlertProducer,
 		readyTimeout:   cfg.ReadyTimeout,
 		requestTimeout: cfg.RequestTimeout,
@@ -186,6 +194,7 @@ func (h *Handler) Readyz(c *gin.Context) {
 	dependencies := gin.H{
 		"prometheus": "ok",
 		"redis":      "disabled",
+		"mysql":      "disabled",
 	}
 
 	var errors []string
@@ -201,6 +210,15 @@ func (h *Handler) Readyz(c *gin.Context) {
 			errors = append(errors, err.Error())
 		} else {
 			dependencies["redis"] = "ok"
+		}
+	}
+
+	if h.mysqlClient != nil && h.mysqlClient.Enabled() {
+		if err := h.mysqlClient.Ping(ctx); err != nil {
+			dependencies["mysql"] = "unreachable"
+			errors = append(errors, err.Error())
+		} else {
+			dependencies["mysql"] = "ok"
 		}
 	}
 

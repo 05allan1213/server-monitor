@@ -12,13 +12,14 @@ import (
 	"server-web/api/handlers"
 	"server-web/api/middleware"
 	"server-web/config"
+	"server-web/database"
 	eventbus "server-web/kafka"
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"
 	ws "server-web/websocket"
 )
 
-func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
+func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, mysqlClient *database.MySQL, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
 	router := gin.New()
 	metrics := middleware.NewMetrics()
 	if websocketHub != nil {
@@ -48,6 +49,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		DedupeTTL:      cfg.AlertEventDedupeTTL,
 		CacheTimeout:   cfg.CacheWriteTimeout,
 		AlertProducer:  alertProducer,
+		MySQLClient:    mysqlClient,
 	}, websocketHub)
 	if err != nil {
 		return nil, err

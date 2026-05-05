@@ -36,6 +36,13 @@ type Config struct {
 	RedisWriteTimeout               time.Duration
 	RedisConnMaxLifetime            time.Duration
 	RedisConnMaxIdleTime            time.Duration
+	MySQLHost                       string
+	MySQLPort                       string
+	MySQLUser                       string
+	MySQLPassword                   string
+	MySQLDatabase                   string
+	MySQLStartupTimeout             time.Duration
+	MySQLPingTimeout                time.Duration
 	StaticDir                       string
 	TraceOTLPEndpoint               string
 	TraceSampleRate                 float64
@@ -84,6 +91,13 @@ func Load() Config {
 		RedisWriteTimeout:    getEnvDurationSeconds("REDIS_WRITE_TIMEOUT_SECONDS", 3),
 		RedisConnMaxLifetime: getEnvDurationSeconds("REDIS_CONN_MAX_LIFETIME_SECONDS", 1800),
 		RedisConnMaxIdleTime: getEnvDurationSeconds("REDIS_CONN_MAX_IDLE_TIME_SECONDS", 300),
+		MySQLHost:            getEnv("MYSQL_HOST", ""),
+		MySQLPort:            getEnv("MYSQL_PORT", "3306"),
+		MySQLUser:            getEnv("MYSQL_USER", ""),
+		MySQLPassword:        getEnv("MYSQL_PASSWORD", ""),
+		MySQLDatabase:        getEnv("MYSQL_DATABASE", ""),
+		MySQLStartupTimeout:  getEnvDurationSeconds("MYSQL_STARTUP_TIMEOUT_SECONDS", 5),
+		MySQLPingTimeout:     getEnvDurationSeconds("MYSQL_PING_TIMEOUT_SECONDS", 3),
 		StaticDir:            getEnv("STATIC_DIR", ""),
 		TraceOTLPEndpoint:    getEnvNonEmpty("TRACE_OTLP_ENDPOINT", ""),
 		TraceSampleRate:      getEnvFloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),

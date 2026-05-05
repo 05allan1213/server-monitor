@@ -15,6 +15,7 @@ import (
 
 	"server-web/api"
 	"server-web/config"
+	"server-web/database"
 	eventbus "server-web/kafka"
 	"server-web/logger"
 	promclient "server-web/prometheus"
@@ -69,6 +70,32 @@ func main() {
 		ConnMaxLifetime: cfg.RedisConnMaxLifetime,
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
+	mysqlInitCtx, mysqlInitCancel := context.WithTimeout(context.Background(), cfg.MySQLStartupTimeout)
+	mysqlClient, err := database.OpenMySQL(mysqlInitCtx, database.MySQLConfig{
+		Host:        cfg.MySQLHost,
+		Port:        cfg.MySQLPort,
+		User:        cfg.MySQLUser,
+		Password:    cfg.MySQLPassword,
+		Database:    cfg.MySQLDatabase,
+		PingTimeout: cfg.MySQLPingTimeout,
+	})
+	mysqlInitCancel()
+	if err != nil {
+		zap.L().Error("mysql init failed",
+			zap.String("host", cfg.MySQLHost),
+			zap.String("port", cfg.MySQLPort),
+			zap.String("database", cfg.MySQLDatabase),
+			zap.Error(err),
+		)
+		os.Exit(1)
+	}
+	if mysqlClient != nil {
+		zap.L().Info("mysql initialized",
+			zap.String("host", cfg.MySQLHost),
+			zap.String("port", cfg.MySQLPort),
+			zap.String("database", cfg.MySQLDatabase),
+		)
+	}
 	var kafkaProducer *eventbus.Producer
 	if len(cfg.KafkaBrokers) > 0 {
 		producer, err := eventbus.NewProducer(cfg.KafkaBrokers)
@@ -125,7 +152,7 @@ func main() {
 
 	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout, cfg.HostsBroadcastInterval)
 
-	router, err := api.NewRouter(cfg, prometheusClient, redisClient, websocketHub, kafkaProducer)
+	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, websocketHub, kafkaProducer)
 	if err != nil {
 		zap.L().Error("create router failed", zap.Error(err))
 		os.Exit(1)
@@ -181,6 +208,11 @@ func main() {
 	}
 	if err := redisClient.Close(); err != nil {
 		zap.L().Error("redis close failed", zap.Error(err))
+	}
+	if mysqlClient != nil {
+		if err := mysqlClient.Close(); err != nil {
+			zap.L().Error("mysql close failed", zap.Error(err))
+		}
 	}
 	if kafkaProducer != nil {
 		if err := kafkaProducer.Close(); err != nil {

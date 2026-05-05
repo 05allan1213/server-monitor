@@ -41,6 +41,33 @@ services:
           memory: 128M
 
   # ------------------------------------------
+  # MySQL 业务数据存储
+  # ------------------------------------------
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-server-monitor-local-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-server_monitor}
+      MYSQL_USER: ${MYSQL_USER:-server_monitor}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-server-monitor-local-mysql}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+  # ------------------------------------------
   # Jaeger 链路追踪
   # ------------------------------------------
   jaeger:
@@ -390,6 +417,11 @@ services:
       PROMETHEUS_URL: http://prometheus:9090
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-server-monitor-local-redis}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-server_monitor}
+      MYSQL_USER: ${MYSQL_USER:-server_monitor}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-server-monitor-local-mysql}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_REQUESTS: "120"
@@ -403,6 +435,8 @@ services:
       jaeger:
         condition: service_started
       redis:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
       prometheus:
         condition: service_healthy
@@ -424,6 +458,7 @@ services:
 
 volumes:
   redis-data:
+  mysql-data:
   prometheus-data:
   grafana-data:
   elasticsearch-data:
