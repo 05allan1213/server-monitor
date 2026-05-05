@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,14 +111,40 @@ func (c Config) Validate() error {
 	if c.ListenAddr == "" {
 		return fmt.Errorf("LISTEN_ADDR is required")
 	}
+	if err := validateHostPort("LISTEN_ADDR", c.ListenAddr); err != nil {
+		return err
+	}
 	if c.MetricsPath == "" {
 		return fmt.Errorf("METRICS_PATH is required")
+	}
+	if !strings.HasPrefix(c.MetricsPath, "/") {
+		return fmt.Errorf("METRICS_PATH must start with /")
+	}
+	if c.TraceOTLPEndpoint != "" {
+		if err := validateHostPort("TRACE_OTLP_ENDPOINT", c.TraceOTLPEndpoint); err != nil {
+			return err
+		}
 	}
 	if c.ScrapeInterval <= 0 {
 		return fmt.Errorf("SCRAPE_INTERVAL must be positive, got %v", c.ScrapeInterval)
 	}
 	if c.ShutdownTimeout <= 0 {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT must be positive, got %v", c.ShutdownTimeout)
+	}
+	return nil
+}
+
+func validateHostPort(name, raw string) error {
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		return fmt.Errorf("%s must use host:port format: %w", name, err)
+	}
+	if strings.TrimSpace(host) != host || strings.TrimSpace(port) != port {
+		return fmt.Errorf("%s must not contain surrounding spaces", name)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return fmt.Errorf("%s port must be in range 1-65535, got %q", name, port)
 	}
 	return nil
 }

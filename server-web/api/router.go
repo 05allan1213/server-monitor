@@ -117,7 +117,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	hostGroupsWrite := router.Group("/api/v1/host-groups")
 	if cfg.AuthEnabled {
-		hostGroupsWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+		hostGroupsWrite.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService), middleware.RequireRole("admin"))
 	}
 	hostGroupsWrite.POST("", handler.CreateHostGroup)
 	hostGroupsWrite.PUT("/:id", handler.UpdateHostGroup)
@@ -127,7 +127,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	alertRulesWrite := router.Group("/api/v1/alert-rules")
 	if cfg.AuthEnabled {
-		alertRulesWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+		alertRulesWrite.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService), middleware.RequireRole("admin"))
 	}
 	alertRulesWrite.POST("", handler.CreateAlertRule)
 	alertRulesWrite.POST("/sync", handler.SyncAlertRules)
@@ -136,7 +136,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	channelsWrite := router.Group("/api/v1/channels")
 	if cfg.AuthEnabled {
-		channelsWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+		channelsWrite.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService), middleware.RequireRole("admin"))
 	}
 	channelsWrite.POST("", handler.CreateNotificationChannel)
 	channelsWrite.PUT("/:id", handler.UpdateNotificationChannel)
@@ -145,13 +145,13 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 
 	authWrite := router.Group("/api/v1/auth")
 	if cfg.AuthEnabled {
-		authWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+		authWrite.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService), middleware.RequireRole("admin"))
 	}
 	authWrite.POST("/register", handler.Register)
 
 	usersWrite := router.Group("/api/v1/users")
 	if cfg.AuthEnabled {
-		usersWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+		usersWrite.Use(middleware.Auth(authService), middleware.VerifyTokenVersion(authService), middleware.RequireRole("admin"))
 	}
 	usersWrite.GET("", handler.ListUsers)
 	usersWrite.DELETE("/:id", handler.DeleteUser)
