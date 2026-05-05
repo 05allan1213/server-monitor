@@ -17,7 +17,6 @@ type Config struct {
 	KafkaGroupID          string
 	RedisAddr             string
 	RedisPassword         string
-	LogLevel              string
 	TraceOTLPEndpoint     string
 	TraceSampleRate       float64
 }
@@ -34,7 +33,6 @@ func Load() Config {
 		KafkaGroupID:          configutil.NonEmptyString("KAFKA_GROUP_ID", "alert-service"),
 		RedisAddr:             configutil.NonEmptyString("REDIS_ADDR", "redis:6379"),
 		RedisPassword:         configutil.String("REDIS_PASSWORD", ""),
-		LogLevel:              configutil.NonEmptyString("LOG_LEVEL", "info"),
 		TraceOTLPEndpoint:     configutil.NonEmptyString("TRACE_OTLP_ENDPOINT", "jaeger:4317"),
 		TraceSampleRate:       configutil.FloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),
 	}
