@@ -24,6 +24,15 @@ import (
 	"server-monitor/pkg/tracer"
 )
 
+type app struct {
+	cfg            config.Config
+	shutdownTracer func(context.Context) error
+	collectors     []collector.Collector
+	server         *http.Server
+	ctx            context.Context
+	cancel         context.CancelFunc
+}
+
 func main() {
 	log, err := logger.Init("server-probe")
 	if err != nil {
@@ -32,8 +41,51 @@ func main() {
 	}
 	defer logger.Sync(log)
 
+	app, err := initApp(context.Background())
+	if err != nil {
+		zap.L().Error("server-probe init failed", zap.Error(err))
+		os.Exit(1)
+	}
+
+	exitCode := runApp(app)
+	shutdownApp(app)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+func initApp(ctx context.Context) (*app, error) {
 	cfg := config.Load()
-	shutdownTracer, err := tracer.Init(context.Background(), tracer.Config{
+	shutdownTracer := initTracer(ctx, cfg)
+	if err := applyHostPaths(cfg); err != nil {
+		return nil, fmt.Errorf("apply host paths: %w", err)
+	}
+
+	registry := prometheus.NewRegistry()
+	collectors := newCollectors(cfg)
+	for _, c := range collectors {
+		c.Register(registry)
+	}
+
+	appCtx, cancel := context.WithCancel(context.Background())
+	return &app{
+		cfg:            cfg,
+		shutdownTracer: shutdownTracer,
+		collectors:     collectors,
+		server: &http.Server{
+			Addr:         cfg.ListenAddr,
+			Handler:      tracedHandler(loggingMiddleware(recoveryMiddleware(newMux(cfg, registry)))),
+			ReadTimeout:  cfg.HTTPReadTimeout,
+			WriteTimeout: cfg.HTTPWriteTimeout,
+			IdleTimeout:  cfg.HTTPIdleTimeout,
+		},
+		ctx:    appCtx,
+		cancel: cancel,
+	}, nil
+}
+
+func initTracer(ctx context.Context, cfg config.Config) func(context.Context) error {
+	shutdownTracer, err := tracer.Init(ctx, tracer.Config{
 		ServiceName:  "server-probe",
 		OTLPEndpoint: cfg.TraceOTLPEndpoint,
 		SampleRate:   cfg.TraceSampleRate,
@@ -43,22 +95,19 @@ func main() {
 			zap.String("endpoint", cfg.TraceOTLPEndpoint),
 			zap.Error(err),
 		)
-		shutdownTracer = func(context.Context) error { return nil }
-	} else if cfg.TraceOTLPEndpoint != "" {
+		return func(context.Context) error { return nil }
+	}
+	if cfg.TraceOTLPEndpoint != "" {
 		zap.L().Info("tracer initialized",
 			zap.String("endpoint", cfg.TraceOTLPEndpoint),
 			zap.Float64("sample_rate", cfg.TraceSampleRate),
 		)
 	}
+	return shutdownTracer
+}
 
-	if err := applyHostPaths(cfg); err != nil {
-		zap.L().Error("apply host paths failed", zap.Error(err))
-		os.Exit(1)
-	}
-
-	registry := prometheus.NewRegistry()
-
-	collectors := []collector.Collector{
+func newCollectors(cfg config.Config) []collector.Collector {
+	return []collector.Collector{
 		collector.NewCPUCollector(cfg.Hostname),
 		collector.NewMemoryCollector(cfg.Hostname),
 		collector.NewDiskCollector(cfg.Hostname),
@@ -66,30 +115,9 @@ func main() {
 		collector.NewLoadCollector(cfg.Hostname),
 		collector.NewProcessCollector(cfg.Hostname),
 	}
+}
 
-	for _, c := range collectors {
-		c.Register(registry)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	updateCollectors(ctx, collectors)
-
-	go func() {
-		ticker := time.NewTicker(cfg.ScrapeInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				updateCollectors(ctx, collectors)
-			}
-		}
-	}()
-
+func newMux(cfg config.Config, registry *prometheus.Registry) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle(cfg.MetricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		MaxRequestsInFlight: cfg.PromHTTPMaxRequestsInFlight,
@@ -109,29 +137,24 @@ func main() {
 			zap.L().Error("readyz response write failed", zap.Error(err))
 		}
 	})
+	return mux
+}
 
-	srv := &http.Server{
-		Addr:         cfg.ListenAddr,
-		Handler:      tracedHandler(loggingMiddleware(recoveryMiddleware(mux))),
-		ReadTimeout:  cfg.HTTPReadTimeout,
-		WriteTimeout: cfg.HTTPWriteTimeout,
-		IdleTimeout:  cfg.HTTPIdleTimeout,
-	}
-
+func runApp(app *app) int {
+	startCollectorLoop(app)
 	serverErr := make(chan error, 1)
 	go func() {
 		zap.L().Info("server-probe listening",
-			zap.String("addr", cfg.ListenAddr),
-			zap.String("metrics_path", cfg.MetricsPath),
+			zap.String("addr", app.cfg.ListenAddr),
+			zap.String("metrics_path", app.cfg.MetricsPath),
 		)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := app.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
 
 	exitCode := 0
 	select {
@@ -141,26 +164,44 @@ func main() {
 		zap.L().Error("server-probe exited", zap.Error(err))
 		exitCode = 1
 	}
+	signal.Stop(quit)
+	return exitCode
+}
 
-	cancel()
+func startCollectorLoop(app *app) {
+	updateCollectors(app.ctx, app.collectors)
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	go func() {
+		ticker := time.NewTicker(app.cfg.ScrapeInterval)
+		defer ticker.Stop()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+		for {
+			select {
+			case <-app.ctx.Done():
+				return
+			case <-ticker.C:
+				updateCollectors(app.ctx, app.collectors)
+			}
+		}
+	}()
+}
+
+func shutdownApp(app *app) {
+	app.cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
+	if err := app.server.Shutdown(shutdownCtx); err != nil {
 		zap.L().Error("server-probe shutdown error", zap.Error(err))
 	}
 	shutdownCancel()
 
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	if err := shutdownTracer(traceShutdownCtx); err != nil {
+	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
+	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
 		zap.L().Warn("tracer shutdown failed", zap.Error(err))
 	}
 	traceShutdownCancel()
 
 	zap.L().Info("server-probe stopped")
-	if exitCode != 0 {
-		os.Exit(exitCode)
-	}
 }
 
 func updateCollectors(ctx context.Context, collectors []collector.Collector) {
