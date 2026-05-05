@@ -18,6 +18,7 @@ const (
 
 type authVerifier interface {
 	AuthenticateBearer(authHeader string) (authpkg.Identity, error)
+	AuthenticateToken(token string) (authpkg.Identity, error)
 }
 
 func Auth(verifier authVerifier) gin.HandlerFunc {
@@ -32,11 +33,15 @@ func Auth(verifier authVerifier) gin.HandlerFunc {
 
 		identity, err := verifier.AuthenticateBearer(c.GetHeader("Authorization"))
 		if errors.Is(err, authpkg.ErrBearerTokenMissing) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"status": "error",
-				"error":  "authorization header required",
-			})
-			return
+			token := c.Query("token")
+			if token == "" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"status": "error",
+					"error":  "authorization header required",
+				})
+				return
+			}
+			identity, err = verifier.AuthenticateToken(token)
 		}
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

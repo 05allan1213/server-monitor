@@ -15,6 +15,10 @@ var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrAuthUnavailable    = errors.New("auth service unavailable")
 	ErrBearerTokenMissing = errors.New("bearer token required")
+	ErrUsernameInvalid    = errors.New("username must be 3-64 characters, letters, digits and underscores only")
+	ErrPasswordTooShort   = errors.New("password must be at least 8 characters")
+	ErrRoleInvalid        = errors.New("role must be admin or viewer")
+	ErrUserExists         = errors.New("username already exists")
 )
 
 type Service struct {
@@ -107,4 +111,73 @@ func (s *Service) AuthenticateBearer(authHeader string) (Identity, error) {
 		return Identity{}, ErrBearerTokenMissing
 	}
 	return s.tokens.Parse(token)
+}
+
+func (s *Service) AuthenticateToken(token string) (Identity, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return Identity{}, ErrBearerTokenMissing
+	}
+	return s.tokens.Parse(token)
+}
+
+func (s *Service) Register(ctx context.Context, username, password, role string) (Identity, error) {
+	username = strings.TrimSpace(username)
+	if !isValidUsername(username) {
+		return Identity{}, ErrUsernameInvalid
+	}
+	if len(password) < 8 {
+		return Identity{}, ErrPasswordTooShort
+	}
+	role = strings.TrimSpace(strings.ToLower(role))
+	if role != "admin" && role != "viewer" {
+		return Identity{}, ErrRoleInvalid
+	}
+
+	hashedPassword, err := HashPassword(password)
+	if err != nil {
+		return Identity{}, err
+	}
+
+	user := model.User{
+		Username: username,
+		Password: hashedPassword,
+		Role:     role,
+	}
+	if err := s.db.WithContext(ctx).Create(&user).Error; err != nil {
+		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "1062") {
+			return Identity{}, ErrUserExists
+		}
+		return Identity{}, err
+	}
+
+	return Identity{ID: user.ID, Username: user.Username, Role: user.Role}, nil
+}
+
+func (s *Service) ListUsers(ctx context.Context) ([]Identity, error) {
+	var users []model.User
+	if err := s.db.WithContext(ctx).Order("id ASC").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	result := make([]Identity, 0, len(users))
+	for _, u := range users {
+		result = append(result, Identity{ID: u.ID, Username: u.Username, Role: u.Role})
+	}
+	return result, nil
+}
+
+func (s *Service) DeleteUser(ctx context.Context, id uint64) error {
+	return s.db.WithContext(ctx).Delete(&model.User{}, id).Error
+}
+
+func isValidUsername(username string) bool {
+	if len(username) < 3 || len(username) > 64 {
+		return false
+	}
+	for _, c := range username {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
 }
