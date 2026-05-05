@@ -62,6 +62,11 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: LOG_LEVEL
             - name: PROMETHEUS_URL
               valueFrom:
                 configMapKeyRef:
@@ -117,6 +122,21 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: HOSTS_CACHE_TTL_SECONDS
+            - name: TRACE_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_OTLP_ENDPOINT
+            - name: TRACE_SAMPLE_RATE
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_SAMPLE_RATE
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: KAFKA_BROKERS
 
 ---
 # ------------------------------------------

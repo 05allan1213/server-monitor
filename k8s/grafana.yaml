@@ -21,6 +21,35 @@ data:
         access: proxy
         url: http://prometheus:9090
         isDefault: true
+        jsonData:
+          timeInterval: "15s"
+      - name: VictoriaMetrics
+        type: prometheus
+        access: proxy
+        url: http://victoriametrics:8428
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+      - name: Elasticsearch
+        type: elasticsearch
+        access: proxy
+        url: http://elasticsearch:9200
+        database: "sm-logs-*"
+        jsonData:
+          timeField: "@timestamp"
+          esVersion: "8.13.0"
+          logMessageField: msg
+          logLevelField: level
+          dataLinks:
+            - datasourceUid: jaeger
+              field: trace_id
+              url: "$${__value.raw}"
+        editable: true
+      - name: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger:16686
+        editable: true
 
 ---
 # ------------------------------------------

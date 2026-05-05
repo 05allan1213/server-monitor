@@ -69,6 +69,11 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: LOG_LEVEL
             - name: LISTEN_ADDR
               valueFrom:
                 configMapKeyRef:
@@ -84,6 +89,16 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: PROBE_SCRAPE_INTERVAL
+            - name: TRACE_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_OTLP_ENDPOINT
+            - name: TRACE_SAMPLE_RATE
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: TRACE_SAMPLE_RATE
             - name: HOST_PROC
               value: /host/proc
             - name: HOST_SYS
