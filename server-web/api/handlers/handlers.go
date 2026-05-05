@@ -19,6 +19,7 @@ import (
 	"server-monitor/pkg/logger"
 
 	authpkg "server-web/auth"
+	appcache "server-web/cache"
 	eventbus "server-web/kafka"
 	"server-web/model"
 	promclient "server-web/prometheus"
@@ -62,13 +63,12 @@ type Handler struct {
 	promClient     *promclient.Client
 	db             *gorm.DB
 	cacheClient    cacheClient
+	cacheService   *appcache.Service
 	mysqlClient    mysqlClient
 	authService    AuthService
 	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
-	hostsTTL       time.Duration
-	dashboardTTL   time.Duration
 	dedupeTTL      time.Duration
 	cacheTimeout   time.Duration
 	ruleSync       AlertRuleSyncConfig
@@ -99,17 +99,6 @@ type hostMetricsResponse struct {
 	Range       string                              `json:"range"`
 	StepSeconds int64                               `json:"stepSeconds"`
 	Metrics     map[string][]promclient.RangeSeries `json:"metrics"`
-}
-
-type dashboardOverview struct {
-	TotalHosts    int     `json:"total_hosts"`
-	HealthyHosts  int     `json:"healthy_hosts"`
-	DownHosts     int     `json:"down_hosts"`
-	ActiveAlerts  int     `json:"active_alerts"`
-	AvgCPU        float64 `json:"avg_cpu"`
-	AvgMemory     float64 `json:"avg_memory"`
-	GeneratedAt   string  `json:"generated_at"`
-	AlertDegraded bool    `json:"alert_degraded,omitempty"`
 }
 
 var validAlertEventStatuses = map[string]struct{}{
@@ -183,16 +172,18 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 		return nil, errors.New("prometheus client is required")
 	}
 	return &Handler{
-		promClient:     promClient,
-		db:             cfg.DB,
-		cacheClient:    cacheClient,
+		promClient:  promClient,
+		db:          cfg.DB,
+		cacheClient: cacheClient,
+		cacheService: appcache.NewService(cacheClient, appcache.Options{
+			HostsTTL:     cfg.HostsTTL,
+			DashboardTTL: cfg.DashboardTTL,
+		}),
 		mysqlClient:    cfg.MySQLClient,
 		authService:    cfg.AuthService,
 		alertProducer:  cfg.AlertProducer,
 		readyTimeout:   cfg.ReadyTimeout,
 		requestTimeout: cfg.RequestTimeout,
-		hostsTTL:       cfg.HostsTTL,
-		dashboardTTL:   cfg.DashboardTTL,
 		dedupeTTL:      cfg.DedupeTTL,
 		cacheTimeout:   cfg.CacheTimeout,
 		ruleSync:       cfg.RuleSync,
@@ -331,7 +322,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 		return
 	}
 
-	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
+	if cachedHosts, ok := h.cacheService.GetHosts(ctx); ok {
 		if groupFiltered {
 			cachedHosts = filterHostsByInstances(cachedHosts, groupInstances)
 		}
@@ -353,7 +344,7 @@ func (h *Handler) Hosts(c *gin.Context) {
 
 	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
-	h.cacheHosts(cacheCtx, hosts)
+	h.cacheService.CacheHosts(cacheCtx, hosts)
 
 	if groupFiltered {
 		hosts = filterHostsByInstances(hosts, groupInstances)
@@ -453,7 +444,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
 
-	if cached, ok := h.getCachedDashboardOverview(ctx); ok {
+	if cached, ok := h.cacheService.GetDashboardOverview(ctx); ok {
 		c.JSON(http.StatusOK, response{
 			Status: "success",
 			Data:   cached,
@@ -471,7 +462,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 	}
 
 	overview := buildDashboardOverview(hosts)
-	activeAlerts, degraded := h.countActiveAlerts(ctx)
+	activeAlerts, degraded := h.cacheService.CountActiveAlerts(ctx)
 	overview.ActiveAlerts = activeAlerts
 	overview.AlertDegraded = degraded
 	overview.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
@@ -479,7 +470,7 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
 	if !degraded {
-		h.cacheDashboardOverview(cacheCtx, overview)
+		h.cacheService.CacheDashboardOverview(cacheCtx, overview)
 	}
 
 	c.JSON(http.StatusOK, response{
@@ -771,88 +762,6 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	}
 }
 
-func (h *Handler) getCachedHosts(ctx context.Context) ([]promclient.Host, bool) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
-		return nil, false
-	}
-
-	value, ok := h.cacheClient.Get(ctx, rediscache.HostsListKey)
-	if !ok {
-		return nil, false
-	}
-
-	var hosts []promclient.Host
-	if err := json.Unmarshal(value, &hosts); err != nil {
-		return nil, false
-	}
-
-	return hosts, true
-}
-
-func (h *Handler) cacheHosts(ctx context.Context, hosts []promclient.Host) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
-		return
-	}
-
-	value, err := json.Marshal(hosts)
-	if err != nil {
-		zap.L().Error("cache hosts marshal failed", zap.Error(err))
-		return
-	}
-
-	if err := h.cacheClient.Set(ctx, rediscache.HostsListKey, value, h.hostsTTL); err != nil {
-		zap.L().Error("cache hosts set failed", zap.Error(err))
-	}
-}
-
-func (h *Handler) getCachedDashboardOverview(ctx context.Context) (dashboardOverview, bool) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
-		return dashboardOverview{}, false
-	}
-
-	value, ok := h.cacheClient.Get(ctx, rediscache.DashboardOverviewKey)
-	if !ok {
-		return dashboardOverview{}, false
-	}
-
-	var overview dashboardOverview
-	if err := json.Unmarshal(value, &overview); err != nil {
-		return dashboardOverview{}, false
-	}
-
-	return overview, true
-}
-
-func (h *Handler) cacheDashboardOverview(ctx context.Context, overview dashboardOverview) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
-		return
-	}
-
-	value, err := json.Marshal(overview)
-	if err != nil {
-		zap.L().Error("cache dashboard overview marshal failed", zap.Error(err))
-		return
-	}
-
-	if err := h.cacheClient.Set(ctx, rediscache.DashboardOverviewKey, value, h.dashboardTTL); err != nil {
-		zap.L().Error("cache dashboard overview set failed", zap.Error(err))
-	}
-}
-
-func (h *Handler) countActiveAlerts(ctx context.Context) (int, bool) {
-	if h.cacheClient == nil || !h.cacheClient.Enabled() {
-		return 0, false
-	}
-
-	values, err := h.cacheClient.HGetAll(ctx, rediscache.ActiveAlertsKey)
-	if err != nil {
-		zap.L().Warn("dashboard overview active alerts degraded", zap.Error(err))
-		return 0, true
-	}
-
-	return len(values), false
-}
-
 func decodeActiveAlerts(values map[string]string) []webhook.AlertRecord {
 	alerts := make([]webhook.AlertRecord, 0, len(values))
 	for _, value := range values {
@@ -1064,8 +973,8 @@ func buildHostMetricQueries(mountpoint string) []hostMetricQuery {
 	}
 }
 
-func buildDashboardOverview(hosts []promclient.Host) dashboardOverview {
-	overview := dashboardOverview{
+func buildDashboardOverview(hosts []promclient.Host) appcache.DashboardOverview {
+	overview := appcache.DashboardOverview{
 		TotalHosts: len(hosts),
 	}
 	if len(hosts) == 0 {
