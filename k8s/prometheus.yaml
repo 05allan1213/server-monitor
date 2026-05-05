@@ -180,6 +180,8 @@ data:
             annotations:
               summary: "High latency on {{ $labels.instance }}"
               description: "HTTP P95 latency is above 1s."
+  custom-alerts.yml: |
+    groups: []
 
 ---
 # ------------------------------------------
@@ -263,6 +265,7 @@ spec:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
             - "--storage.tsdb.retention.time=6h"
+            - "--web.enable-lifecycle"
           ports:
             - containerPort: 9090
           resources:
