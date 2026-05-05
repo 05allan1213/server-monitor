@@ -18,10 +18,10 @@ import (
 	"alert-service/config"
 	"alert-service/health"
 	"alert-service/kafka"
-	"alert-service/logger"
 	servicemetrics "alert-service/metrics"
 	redisstore "alert-service/redis"
 
+	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
 
@@ -36,7 +36,7 @@ const (
 func main() {
 	cfg := config.Load()
 
-	log, err := logger.Init("alert-service", cfg.LogLevel)
+	log, err := logger.Init("alert-service")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
 		os.Exit(1)

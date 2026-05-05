@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
-	"alert-service/logger"
+	"server-monitor/pkg/logger"
 )
 
 type AlertProcessor interface {
