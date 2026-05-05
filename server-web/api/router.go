@@ -99,6 +99,10 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	alertRulesRead.GET("", handler.ListAlertRules)
 	alertRulesRead.GET("/:id", handler.GetAlertRule)
 
+	channelsRead := protected.Group("/api/v1/channels")
+	channelsRead.GET("", handler.ListNotificationChannels)
+	channelsRead.GET("/:id", handler.GetNotificationChannel)
+
 	hostGroupsWrite := router.Group("/api/v1/host-groups")
 	if cfg.AuthEnabled {
 		hostGroupsWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
@@ -117,6 +121,15 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	alertRulesWrite.POST("/sync", handler.SyncAlertRules)
 	alertRulesWrite.PUT("/:id", handler.UpdateAlertRule)
 	alertRulesWrite.DELETE("/:id", handler.DeleteAlertRule)
+
+	channelsWrite := router.Group("/api/v1/channels")
+	if cfg.AuthEnabled {
+		channelsWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+	}
+	channelsWrite.POST("", handler.CreateNotificationChannel)
+	channelsWrite.PUT("/:id", handler.UpdateNotificationChannel)
+	channelsWrite.DELETE("/:id", handler.DeleteNotificationChannel)
+	channelsWrite.POST("/:id/test", handler.TestNotificationChannel)
 
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
