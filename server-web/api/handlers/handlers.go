@@ -16,9 +16,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"server-monitor/pkg/logger"
+
 	authpkg "server-web/auth"
 	eventbus "server-web/kafka"
-	"server-web/logger"
 	"server-web/model"
 	promclient "server-web/prometheus"
 	rediscache "server-web/redis"

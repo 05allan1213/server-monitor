@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"server-web/logger"
+	"server-monitor/pkg/logger"
 )
 
 func Recovery() gin.HandlerFunc {

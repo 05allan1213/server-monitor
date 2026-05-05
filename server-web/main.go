@@ -19,12 +19,12 @@ import (
 	"server-web/config"
 	"server-web/database"
 	eventbus "server-web/kafka"
-	"server-web/logger"
 	promclient "server-web/prometheus"
 	"server-web/pubsub"
 	rediscache "server-web/redis"
 	ws "server-web/websocket"
 
+	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
 

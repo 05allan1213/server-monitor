@@ -21,8 +21,8 @@ import (
 
 	"server-probe/collector"
 	"server-probe/config"
-	"server-probe/logger"
 
+	"server-monitor/pkg/logger"
 	"server-monitor/pkg/tracer"
 )
 
