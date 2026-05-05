@@ -1,4 +1,4 @@
-.PHONY: all build build-probe build-web run run-probe run-web docker docker-up docker-down docker-logs clean test help dev-deps dev-web dev-frontend dev-stop
+.PHONY: all build build-probe build-web build-alert-service run run-probe run-web docker docker-up docker-down docker-logs clean test help dev-deps dev-web dev-frontend dev-stop
 
 all: build
 
@@ -6,7 +6,7 @@ all: build
 # 构建相关
 # ============================================
 
-build: build-probe build-web
+build: build-probe build-web build-alert-service
 
 build-probe:
 	@echo "构建 server-probe..."
@@ -15,6 +15,10 @@ build-probe:
 build-web:
 	@echo "构建 server-web..."
 	cd server-web && go build -o web .
+
+build-alert-service:
+	@echo "构建 alert-service..."
+	cd alert-service && go build -o alert-service .
 
 # ============================================
 # 本地运行
@@ -99,17 +103,20 @@ test:
 	@echo "运行测试..."
 	cd server-probe && go test -v ./...
 	cd server-web && go test -v ./...
+	cd alert-service && go test -v ./...
 
 fmt:
 	@echo "格式化代码..."
 	cd server-probe && go fmt ./...
 	cd server-web && go fmt ./...
+	cd alert-service && go fmt ./...
 
 lint:
 	@echo "静态检查..."
 	@which golangci-lint > /dev/null || (echo "请先安装 golangci-lint" && exit 1)
 	cd server-probe && golangci-lint run
 	cd server-web && golangci-lint run
+	cd alert-service && golangci-lint run
 
 # ============================================
 # 清理
@@ -119,6 +126,7 @@ clean:
 	@echo "清理构建产物..."
 	rm -f server-probe/probe
 	rm -f server-web/web
+	rm -f alert-service/alert-service
 	rm -f main
 	@echo "清理完成"
 
@@ -130,6 +138,7 @@ tidy:
 	@echo "整理依赖..."
 	cd server-probe && go mod tidy
 	cd server-web && go mod tidy
+	cd alert-service && go mod tidy
 
 # ============================================
 # 帮助
@@ -142,6 +151,7 @@ help:
 	@echo "  make build          构建所有服务"
 	@echo "  make build-probe    构建 server-probe"
 	@echo "  make build-web      构建 server-web"
+	@echo "  make build-alert-service 构建 alert-service"
 	@echo ""
 	@echo "开发模式（推荐开发阶段使用，无需构建镜像）:"
 	@echo "  make dev-deps       启动依赖服务（Redis/Prometheus/AlertManager/Grafana/Probe）"
