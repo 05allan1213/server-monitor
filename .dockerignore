@@ -3,9 +3,9 @@
 docs/
 charts/
 k8s/
-alert-service/
-server-probe/
 docker/
+!server-web/docs/
+!server-web/docs/**
 *_test.go
 *.md
 *.out

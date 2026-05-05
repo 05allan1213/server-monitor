@@ -161,7 +161,7 @@ jobs:
       - name: Build probe image
         uses: docker/build-push-action@v5
         with:
-          context: ./server-probe
+          context: .
           file: ./server-probe/Dockerfile
           push: false
           tags: server-probe:ci
@@ -177,7 +177,7 @@ jobs:
       - name: Build alert-service image
         uses: docker/build-push-action@v5
         with:
-          context: ./alert-service
+          context: .
           file: ./alert-service/Dockerfile
           push: false
           tags: alert-service:ci
@@ -202,7 +202,7 @@ jobs:
       - name: Build and push probe
         uses: docker/build-push-action@v5
         with:
-          context: ./server-probe
+          context: .
           file: ./server-probe/Dockerfile
           push: true
           tags: |
@@ -222,7 +222,7 @@ jobs:
       - name: Build and push alert-service
         uses: docker/build-push-action@v5
         with:
-          context: ./alert-service
+          context: .
           file: ./alert-service/Dockerfile
           push: true
           tags: |

@@ -3,14 +3,16 @@
 # ============================================
 FROM golang:1.26-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app/alert-service
 
-COPY . .
+COPY pkg/ /app/pkg/
+COPY alert-service/go.mod alert-service/go.sum ./
 
 ENV GOPROXY=https://goproxy.cn,direct
 
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o alert-service .
+COPY alert-service/ ./
+RUN CGO_ENABLED=0 go build -o /app/alert-service .
 
 # ============================================
 # 第二阶段：运行

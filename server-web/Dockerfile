@@ -16,14 +16,16 @@ RUN npm run build
 # ============================================
 FROM golang:1.26-alpine AS go-builder
 
-WORKDIR /app
+WORKDIR /app/server-web
 
-COPY server-web/ ./
+COPY pkg/ /app/pkg/
+COPY server-web/go.mod server-web/go.sum ./
 
 ENV GOPROXY=https://goproxy.cn,direct
 
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o web .
+COPY server-web/ ./
+RUN CGO_ENABLED=0 go build -o /app/web .
 
 # ============================================
 # 第三阶段：运行
