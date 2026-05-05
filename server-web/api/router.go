@@ -71,6 +71,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
+	router.GET("/readyz/full", handler.ReadyzFull)
 	router.POST("/api/v1/auth/login", handler.Login)
 	router.POST(
 		"/api/v1/webhook/alertmanager",
@@ -131,6 +132,19 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	channelsWrite.DELETE("/:id", handler.DeleteNotificationChannel)
 	channelsWrite.POST("/:id/test", handler.TestNotificationChannel)
 
+	authWrite := router.Group("/api/v1/auth")
+	if cfg.AuthEnabled {
+		authWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+	}
+	authWrite.POST("/register", handler.Register)
+
+	usersWrite := router.Group("/api/v1/users")
+	if cfg.AuthEnabled {
+		usersWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+	}
+	usersWrite.GET("", handler.ListUsers)
+	usersWrite.DELETE("/:id", handler.DeleteUser)
+
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
 		if _, err := os.Stat(staticDir); err == nil {
@@ -184,7 +198,7 @@ func serveStatic(staticDir string) (gin.HandlerFunc, error) {
 			c.Next()
 			return
 		}
-		if path == "/healthz" || path == "/readyz" {
+		if path == "/healthz" || path == "/readyz" || strings.HasPrefix(path, "/readyz/") {
 			c.Next()
 			return
 		}

@@ -29,6 +29,10 @@ import (
 type AuthService interface {
 	Login(ctx context.Context, username string, password string) (authpkg.LoginResult, error)
 	AuthenticateBearer(authHeader string) (authpkg.Identity, error)
+	AuthenticateToken(token string) (authpkg.Identity, error)
+	Register(ctx context.Context, username, password, role string) (authpkg.Identity, error)
+	ListUsers(ctx context.Context) ([]authpkg.Identity, error)
+	DeleteUser(ctx context.Context, id uint64) error
 }
 
 type cacheClient interface {
@@ -205,6 +209,61 @@ func (h *Handler) Healthz(c *gin.Context) {
 }
 
 func (h *Handler) Readyz(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.readyTimeout)
+	defer cancel()
+
+	dependencies := gin.H{
+		"prometheus": "ok",
+		"redis":      "disabled",
+		"mysql":      "disabled",
+	}
+
+	var errors []string
+
+	if err := h.promClient.Ready(ctx); err != nil {
+		dependencies["prometheus"] = "unreachable"
+		errors = append(errors, err.Error())
+	}
+
+	if h.cacheClient != nil && h.cacheClient.Enabled() {
+		if err := h.cacheClient.Ping(ctx); err != nil {
+			dependencies["redis"] = "unreachable"
+			errors = append(errors, err.Error())
+		} else {
+			dependencies["redis"] = "ok"
+		}
+	}
+
+	if h.mysqlClient != nil && h.mysqlClient.Enabled() {
+		if err := h.mysqlClient.Ping(ctx); err != nil {
+			dependencies["mysql"] = "unreachable"
+		} else {
+			dependencies["mysql"] = "ok"
+		}
+	}
+
+	if len(errors) > 0 {
+		c.JSON(http.StatusServiceUnavailable, response{
+			Status: "error",
+			Error:  fmt.Sprintf("readiness check failed: %s", strings.Join(errors, "; ")),
+			Data: gin.H{
+				"ready":        false,
+				"dependencies": dependencies,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, response{
+		Status: "success",
+		Data: gin.H{
+			"ready":        true,
+			"dependencies": dependencies,
+		},
+	})
+}
+
+func (h *Handler) ReadyzFull(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.readyTimeout)
 	defer cancel()
 
