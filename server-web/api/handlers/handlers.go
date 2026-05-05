@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	authpkg "server-web/auth"
 	eventbus "server-web/kafka"
@@ -53,6 +54,7 @@ type alertProducer interface {
 
 type Handler struct {
 	promClient     *promclient.Client
+	db             *gorm.DB
 	cacheClient    cacheClient
 	mysqlClient    mysqlClient
 	authService    AuthService
@@ -164,6 +166,7 @@ type Config struct {
 	CacheTimeout   time.Duration
 	AlertProducer  alertProducer
 	MySQLClient    mysqlClient
+	DB             *gorm.DB
 	AuthService    AuthService
 }
 
@@ -173,6 +176,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 	}
 	return &Handler{
 		promClient:     promClient,
+		db:             cfg.DB,
 		cacheClient:    cacheClient,
 		mysqlClient:    cfg.MySQLClient,
 		authService:    cfg.AuthService,
@@ -260,8 +264,22 @@ func (h *Handler) Hosts(c *gin.Context) {
 	queryFilter := normalizeHostQuery(c.Query("q"))
 	sortBy := parseHostSort(c.Query("sort"))
 	riskFilter := parseHostRisk(c.Query("risk"))
+	groupInstances, groupFiltered, ok := h.parseHostGroupFilter(c)
+	if !ok {
+		return
+	}
+	if groupFiltered && len(groupInstances) == 0 {
+		c.JSON(http.StatusOK, response{
+			Status: "success",
+			Data:   []promclient.Host{},
+		})
+		return
+	}
 
 	if cachedHosts, ok := h.getCachedHosts(ctx); ok {
+		if groupFiltered {
+			cachedHosts = filterHostsByInstances(cachedHosts, groupInstances)
+		}
 		c.JSON(http.StatusOK, response{
 			Status: "success",
 			Data:   sortHosts(filterHosts(cachedHosts, statusFilter, queryFilter, riskFilter), sortBy),
@@ -281,6 +299,10 @@ func (h *Handler) Hosts(c *gin.Context) {
 	cacheCtx, cacheCancel := context.WithTimeout(context.Background(), h.cacheTimeout)
 	defer cacheCancel()
 	h.cacheHosts(cacheCtx, hosts)
+
+	if groupFiltered {
+		hosts = filterHostsByInstances(hosts, groupInstances)
+	}
 
 	c.JSON(http.StatusOK, response{
 		Status: "success",

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"gorm.io/gorm"
 
 	"server-web/api/handlers"
 	"server-web/api/middleware"
@@ -54,6 +55,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		CacheTimeout:   cfg.CacheWriteTimeout,
 		AlertProducer:  alertProducer,
 		MySQLClient:    mysqlClient,
+		DB:             dbFromMySQL(mysqlClient),
 		AuthService:    authService,
 	}, websocketHub)
 	if err != nil {
@@ -82,6 +84,20 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	protected.GET("/api/v1/alerts/events", handler.AlertEvents)
 	protected.GET("/ws/alerts", handler.AlertsWebSocket)
 
+	hostGroupsRead := protected.Group("/api/v1/host-groups")
+	hostGroupsRead.GET("", handler.ListHostGroups)
+	hostGroupsRead.GET("/:id", handler.GetHostGroup)
+
+	hostGroupsWrite := router.Group("/api/v1/host-groups")
+	if cfg.AuthEnabled {
+		hostGroupsWrite.Use(middleware.Auth(authService), middleware.RequireRole("admin"))
+	}
+	hostGroupsWrite.POST("", handler.CreateHostGroup)
+	hostGroupsWrite.PUT("/:id", handler.UpdateHostGroup)
+	hostGroupsWrite.DELETE("/:id", handler.DeleteHostGroup)
+	hostGroupsWrite.POST("/:id/members", handler.AddHostGroupMember)
+	hostGroupsWrite.DELETE("/:id/members", handler.DeleteHostGroupMember)
+
 	staticDir := cfg.StaticDir
 	if staticDir != "" {
 		if _, err := os.Stat(staticDir); err == nil {
@@ -94,6 +110,13 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	}
 
 	return router, nil
+}
+
+func dbFromMySQL(mysqlClient *database.MySQL) *gorm.DB {
+	if mysqlClient == nil {
+		return nil
+	}
+	return mysqlClient.DB()
 }
 
 func limitRequestBody(maxBytes int64) gin.HandlerFunc {
