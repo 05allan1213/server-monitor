@@ -40,6 +40,10 @@ spec:
                       values:
                         - server-web
                 topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done"]
       containers:
         - name: server-web
           image: "{{ .Values.serverWeb.image.repository }}:{{ .Values.serverWeb.image.tag }}"
@@ -147,6 +151,51 @@ spec:
                 configMapKeyRef:
                   name: monitor-config
                   key: KAFKA_BROKERS
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: MYSQL_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: MYSQL_PORT
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: MYSQL_USER
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: MYSQL_DATABASE
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: MYSQL_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: JWT_SECRET
+            - name: JWT_EXPIRE_HOURS
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: JWT_EXPIRE_HOURS
+            - name: AUTH_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: monitor-config
+                  key: AUTH_ENABLED
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name | quote }}
+                  key: ADMIN_PASSWORD
 
 ---
 # ------------------------------------------

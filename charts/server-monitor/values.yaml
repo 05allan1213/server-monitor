@@ -20,6 +20,10 @@ config:
   traceOtlpEndpoint: jaeger:4317
   traceSampleRate: "1.0"
   kafkaBrokers: kafka:9092
+  mysqlHost: mysql
+  mysqlPort: "3306"
+  mysqlUser: server_monitor
+  mysqlDatabase: server_monitor
 
 secret:
   create: true
@@ -110,6 +114,29 @@ redis:
   service:
     type: ClusterIP
     port: 6379
+
+mysql:
+  enabled: true
+  image: mysql:8.0
+  database: server_monitor
+  user: server_monitor
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+auth:
+  enabled: true
+  jwtExpireHours: "24"
 
 prometheus:
   enabled: true

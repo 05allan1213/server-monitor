@@ -29,3 +29,9 @@ data:
   PROBE_LISTEN_ADDR: {{ .Values.serverProbe.listenAddr | quote }}
   PROBE_METRICS_PATH: {{ .Values.serverProbe.metricsPath | quote }}
   PROBE_SCRAPE_INTERVAL: {{ .Values.serverProbe.scrapeInterval | quote }}
+  MYSQL_HOST: {{ .Values.config.mysqlHost | quote }}
+  MYSQL_PORT: {{ .Values.config.mysqlPort | quote }}
+  MYSQL_USER: {{ .Values.config.mysqlUser | quote }}
+  MYSQL_DATABASE: {{ .Values.config.mysqlDatabase | quote }}
+  JWT_EXPIRE_HOURS: {{ .Values.auth.jwtExpireHours | quote }}
+  AUTH_ENABLED: {{ .Values.auth.enabled | quote }}
