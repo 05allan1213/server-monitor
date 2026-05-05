@@ -38,6 +38,29 @@ export const router = createRouter({
       component: () => import("../pages/AlertsPage.vue"),
     },
     {
+      path: "/alert-histories",
+      name: "alert-histories",
+      component: () => import("../pages/AlertHistoriesPage.vue"),
+    },
+    {
+      path: "/settings",
+      name: "settings",
+      component: () => import("../pages/SettingsPage.vue"),
+      meta: { admin: true },
+    },
+    {
+      path: "/settings/alert-rules",
+      name: "settings-alert-rules",
+      component: () => import("../pages/AlertRulesPage.vue"),
+      meta: { admin: true },
+    },
+    {
+      path: "/settings/channels",
+      name: "settings-channels",
+      component: () => import("../pages/ChannelsPage.vue"),
+      meta: { admin: true },
+    },
+    {
       path: "/:pathMatch(.*)*",
       redirect: "/",
     },
@@ -71,6 +94,10 @@ router.beforeEach(async (to) => {
         query: { redirect: to.fullPath },
       };
     }
+  }
+
+  if (to.meta.admin && !auth.isAdmin) {
+    return { path: "/" };
   }
 
   return true;

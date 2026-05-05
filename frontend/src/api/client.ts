@@ -82,6 +82,46 @@ export async function postApiData<T, TBody = unknown>(
   }
 }
 
+export async function putApiData<T, TBody = unknown>(
+  url: string,
+  body?: TBody,
+  config: AxiosRequestConfig = {},
+): Promise<T> {
+  try {
+    const response = await httpClient.put<ApiResponse<T>>(url, body, config);
+    const payload = response.data;
+
+    if (payload.status !== "success") {
+      throw new Error(payload.error ?? "Unknown API error");
+    }
+
+    if (payload.data === undefined) {
+      throw new Error("API response missing data field");
+    }
+
+    return payload.data;
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      throw normalizeAxiosError(err);
+    }
+    throw err;
+  }
+}
+
+export async function deleteApiData(
+  url: string,
+  config: AxiosRequestConfig = {},
+): Promise<void> {
+  try {
+    await httpClient.delete(url, config);
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      throw normalizeAxiosError(err);
+    }
+    throw err;
+  }
+}
+
 export async function getApiResponse<T>(
   url: string,
   config: AxiosRequestConfig = {},

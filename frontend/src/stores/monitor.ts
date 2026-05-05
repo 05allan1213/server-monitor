@@ -26,6 +26,7 @@ export const useMonitorStore = defineStore("monitor", () => {
   const selectedHostStatus = ref<HostStatusFilter>("all");
   const selectedHostSort = ref<HostSort>("instance");
   const selectedHostRisk = ref<HostRiskFilter>("all");
+  const selectedHostGroup = ref(0);
   const selectedEventStatus = ref<EventStatusFilter>("all");
   const selectedEventSeverity = ref<SeverityFilter>("all");
   const lastUpdateTime = ref(Date.now());
@@ -104,6 +105,10 @@ export const useMonitorStore = defineStore("monitor", () => {
         break;
     }
 
+    if (selectedHostGroup.value !== 0) {
+      parts.push(`分组 #${selectedHostGroup.value}`);
+    }
+
     return parts;
   });
   const hasActiveHostFilters = computed(() => hostFilterSummary.value.length > 0);
@@ -159,6 +164,11 @@ export const useMonitorStore = defineStore("monitor", () => {
     loadHosts();
   }
 
+  function setHostGroup(value: number) {
+    selectedHostGroup.value = value;
+    loadHosts();
+  }
+
   function applyHostSearch() {
     appliedHostQuery.value = hostSearchInput.value.trim().toLowerCase();
     loadHosts();
@@ -170,6 +180,7 @@ export const useMonitorStore = defineStore("monitor", () => {
     selectedHostStatus.value = "all";
     selectedHostSort.value = "instance";
     selectedHostRisk.value = "all";
+    selectedHostGroup.value = 0;
     loadHosts();
   }
 
@@ -217,6 +228,7 @@ export const useMonitorStore = defineStore("monitor", () => {
         q: appliedHostQuery.value,
         sort: selectedHostSort.value,
         risk: selectedHostRisk.value,
+        group: selectedHostGroup.value,
       });
       hosts.value = sortHosts(data);
     } catch (err) {
@@ -283,6 +295,11 @@ export const useMonitorStore = defineStore("monitor", () => {
   }
 
   function applyIncomingHosts(newHosts: Host[]) {
+    if (selectedHostGroup.value !== 0) {
+      loadHosts();
+      return;
+    }
+
     hosts.value = sortHosts(
       newHosts.filter((host) => {
         const statusMatched =
@@ -423,6 +440,7 @@ export const useMonitorStore = defineStore("monitor", () => {
     selectedHostStatus,
     selectedHostSort,
     selectedHostRisk,
+    selectedHostGroup,
     selectedEventStatus,
     selectedEventSeverity,
     lastUpdateTime,
@@ -445,6 +463,7 @@ export const useMonitorStore = defineStore("monitor", () => {
     setHostStatusFilter,
     setHostSort,
     setHostRisk,
+    setHostGroup,
     applyHostSearch,
     resetHostFilters,
     setEventStatusFilter,

@@ -39,6 +39,88 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export interface HostGroupMember {
+  id?: number;
+  group_id?: number;
+  instance: string;
+  created_at?: string;
+}
+
+export interface HostGroup {
+  id: number;
+  name: string;
+  description: string;
+  member_count: number;
+  members?: HostGroupMember[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertRule {
+  id: number;
+  name: string;
+  expr: string;
+  duration: string;
+  severity: "critical" | "warning" | "info" | string;
+  summary: string;
+  description: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertRuleSyncResult {
+  success: boolean;
+  rule_count: number;
+  file_path?: string;
+  synced_at?: string;
+  reload_url?: string;
+  promtool?: string;
+  error?: string;
+  restored?: boolean;
+  reloaded: boolean;
+  validated: boolean;
+  rendered_to?: string;
+}
+
+export interface NotificationChannel {
+  id: number;
+  name: string;
+  type: "webhook" | string;
+  url: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationChannelTestResult {
+  success: boolean;
+  latency_ms?: number;
+  status_code?: number;
+  error?: string;
+}
+
+export interface AlertHistory {
+  id: number;
+  fingerprint: string;
+  alert_name: string;
+  instance: string;
+  severity: "critical" | "warning" | "info" | string;
+  status: "firing" | "resolved" | string;
+  summary: string;
+  labels_json: string;
+  fired_at: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+export interface AlertHistoryListResponse {
+  items: AlertHistory[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface RangePoint {
   timestamp: string;
   value: number;

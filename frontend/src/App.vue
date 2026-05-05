@@ -248,6 +248,17 @@ onBeforeUnmount(() => {
       <RouterLink to="/alerts" class="route-tab" exact-active-class="active">
         告警
       </RouterLink>
+      <RouterLink to="/alert-histories" class="route-tab" exact-active-class="active">
+        历史
+      </RouterLink>
+      <RouterLink
+        v-if="auth.isAdmin"
+        to="/settings"
+        class="route-tab"
+        exact-active-class="active"
+      >
+        设置
+      </RouterLink>
     </nav>
 
     <RouterView />

@@ -6,6 +6,7 @@ export interface HostsQuery {
   q?: string;
   sort?: "instance" | "cpu_desc" | "memory_desc";
   risk?: "all" | "high_cpu" | "high_memory";
+  group?: number;
 }
 
 export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
@@ -22,6 +23,9 @@ export async function fetchHosts(query: HostsQuery = {}): Promise<Host[]> {
   }
   if (query.risk && query.risk !== "all") {
     params.risk = query.risk;
+  }
+  if (query.group) {
+    params.group = String(query.group);
   }
 
   return (await getApiData<Host[]>("/api/v1/hosts", { params })) ?? [];
