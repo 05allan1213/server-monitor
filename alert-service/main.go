@@ -187,10 +187,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 		start := time.Now()
 		recorder := httpmiddleware.NewStatusRecorder(w)
+		r, requestID := httpmiddleware.EnsureRequestID(recorder, r, start)
 		next.ServeHTTP(recorder, r)
 
 		logger.FromContext(r.Context()).Info("http request completed",
 			zap.String("module", "http"),
+			zap.String("request_id", requestID),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", recorder.Status()),
@@ -204,6 +206,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return httpmiddleware.Recovery(next, func(r *http.Request) []zap.Field {
 		return []zap.Field{
 			zap.String("module", "http"),
+			zap.String("request_id", httpmiddleware.RequestIDFromRequest(r)),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 		}
