@@ -90,6 +90,15 @@ func main() {
 		os.Exit(1)
 	}
 	if mysqlClient != nil {
+		if err := database.Migrate(mysqlClient.DB()); err != nil {
+			zap.L().Error("mysql migration failed",
+				zap.String("host", cfg.MySQLHost),
+				zap.String("port", cfg.MySQLPort),
+				zap.String("database", cfg.MySQLDatabase),
+				zap.Error(err),
+			)
+			os.Exit(1)
+		}
 		zap.L().Info("mysql initialized",
 			zap.String("host", cfg.MySQLHost),
 			zap.String("port", cfg.MySQLPort),
