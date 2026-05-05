@@ -3,9 +3,13 @@ package webhook
 import "time"
 
 type AlertmanagerWebhookRequest struct {
-	Receiver string        `json:"receiver"`
-	Status   string        `json:"status"`
-	Alerts   []AlertRecord `json:"alerts"`
+	Receiver          string            `json:"receiver"`
+	Status            string            `json:"status"`
+	Alerts            []AlertRecord     `json:"alerts"`
+	GroupLabels       map[string]string `json:"groupLabels"`
+	CommonLabels      map[string]string `json:"commonLabels"`
+	CommonAnnotations map[string]string `json:"commonAnnotations"`
+	ExternalURL       string            `json:"externalURL"`
 }
 
 type AlertRecord struct {

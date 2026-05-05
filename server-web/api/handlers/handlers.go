@@ -29,6 +29,7 @@ type AuthService interface {
 	Register(ctx context.Context, username, password, role string) (authpkg.Identity, error)
 	ListUsers(ctx context.Context) ([]authpkg.Identity, error)
 	DeleteUser(ctx context.Context, id uint64) error
+	VerifyTokenVersion(ctx context.Context, identity authpkg.Identity) error
 }
 
 type cacheClient interface {
@@ -243,6 +244,16 @@ func (h *Handler) ReadyzFull(c *gin.Context) {
 	})
 }
 
+// @Summary      获取主机列表
+// @Description  查询 Prometheus 获取所有监控主机列表
+// @Tags         hosts
+// @Produce      json
+// @Security     BearerAuth
+// @Param        group  query  string  false  "主机组名称过滤"
+// @Success      200  {object}  response
+// @Failure      401  {object}  response
+// @Failure      500  {object}  response
+// @Router       /hosts [get]
 func (h *Handler) Hosts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.requestTimeout)
 	defer cancel()
@@ -345,6 +356,16 @@ func (h *Handler) DashboardOverview(c *gin.Context) {
 	})
 }
 
+// @Summary      Alertmanager Webhook 接收
+// @Description  接收 Alertmanager 发送的告警通知，转发到 Kafka 和 WebSocket
+// @Tags         webhook
+// @Accept       json
+// @Produce      json
+// @Param        body  body  webhook.AlertmanagerWebhookRequest  true  "Alertmanager Webhook 请求"
+// @Success      200  {object}  response
+// @Failure      400  {object}  response
+// @Failure      503  {object}  response
+// @Router       /webhook/alertmanager [post]
 func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
@@ -385,6 +406,15 @@ func (h *Handler) AlertmanagerWebhook(c *gin.Context) {
 	})
 }
 
+// @Summary      获取活跃告警列表
+// @Description  从 Redis 获取当前活跃的告警列表
+// @Tags         alerts
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response
+// @Failure      401  {object}  response
+// @Failure      500  {object}  response
+// @Router       /alerts/active [get]
 func (h *Handler) ActiveAlerts(c *gin.Context) {
 	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
@@ -409,6 +439,20 @@ func (h *Handler) ActiveAlerts(c *gin.Context) {
 	})
 }
 
+// @Summary      获取告警事件列表
+// @Description  查询告警事件历史，支持按状态和严重程度过滤
+// @Tags         alerts
+// @Produce      json
+// @Security     BearerAuth
+// @Param        status     query  string  false  "状态过滤 (firing/resolved)"
+// @Param        severity   query  string  false  "严重程度过滤 (critical/warning/info)"
+// @Param        search     query  string  false  "搜索关键词"
+// @Param        page       query  int     false  "页码"
+// @Param        page_size  query  int     false  "每页数量"
+// @Success      200  {object}  response
+// @Failure      401  {object}  response
+// @Failure      500  {object}  response
+// @Router       /alerts/events [get]
 func (h *Handler) AlertEvents(c *gin.Context) {
 	if !h.alertService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, response{
@@ -503,12 +547,4 @@ func (h *Handler) AlertsWebSocket(c *gin.Context) {
 	if err := h.websocketHub.ServeWS(c.Writer, c.Request); err != nil {
 		zap.L().Warn("websocket upgrade failed", zap.Error(err))
 	}
-}
-
-func parseAlertEventFilter(raw string, allowed map[string]struct{}) string {
-	if _, ok := allowed[raw]; !ok {
-		return ""
-	}
-
-	return raw
 }
