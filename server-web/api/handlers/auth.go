@@ -20,6 +20,17 @@ type authUserResponse struct {
 	Role     string `json:"role"`
 }
 
+// @Summary      用户登录
+// @Description  使用用户名和密码登录，返回 JWT 令牌
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  loginRequest  true  "登录请求"
+// @Success      200  {object}  response
+// @Failure      400  {object}  response
+// @Failure      401  {object}  response
+// @Failure      503  {object}  response
+// @Router       /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	if h.authService == nil {
 		c.JSON(http.StatusServiceUnavailable, response{
@@ -68,6 +79,15 @@ func (h *Handler) Login(c *gin.Context) {
 	})
 }
 
+// @Summary      获取当前用户信息
+// @Description  根据 Bearer Token 获取当前登录用户信息
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response
+// @Failure      401  {object}  response
+// @Failure      503  {object}  response
+// @Router       /auth/me [get]
 func (h *Handler) Me(c *gin.Context) {
 	if h.authService == nil {
 		c.JSON(http.StatusServiceUnavailable, response{
