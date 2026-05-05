@@ -205,23 +205,16 @@ func applyHostPaths(cfg config.Config) error {
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		recorder := httpmiddleware.NewStatusRecorder(w)
-		r, requestID := httpmiddleware.EnsureRequestID(recorder, r, start)
-
-		next.ServeHTTP(recorder, r)
-
-		latency := time.Since(start)
-		logger.FromContext(r.Context()).Info("http request completed",
-			zap.String("request_id", requestID),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.Int("status", recorder.Status()),
-			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
-			zap.String("client_ip", r.RemoteAddr),
-		)
-	})
+	return httpmiddleware.Logging(
+		next,
+		func(w http.ResponseWriter, r *http.Request, start time.Time) *http.Request {
+			nextRequest, _ := httpmiddleware.EnsureRequestID(w, r, start)
+			return nextRequest
+		},
+		func(r *http.Request, _ int, _ time.Duration) []zap.Field {
+			return httpmiddleware.RequestMetadataFields(r, httpmiddleware.RequestIDFromRequest(r))
+		},
+	)
 }
 
 func tracedHandler(next http.Handler) http.Handler {

@@ -176,6 +176,18 @@ func main() {
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
+	logged := httpmiddleware.Logging(
+		next,
+		func(w http.ResponseWriter, r *http.Request, start time.Time) *http.Request {
+			nextRequest, _ := httpmiddleware.EnsureRequestID(w, r, start)
+			return nextRequest
+		},
+		func(r *http.Request, _ int, _ time.Duration) []zap.Field {
+			fields := []zap.Field{zap.String("module", "http")}
+			fields = append(fields, httpmiddleware.RequestMetadataFields(r, httpmiddleware.RequestIDFromRequest(r))...)
+			return fields
+		},
+	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, span := otel.Tracer("alert-service/http").Start(r.Context(), r.Method+" "+r.URL.Path)
 		defer span.End()
@@ -185,20 +197,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		)
 		r = r.WithContext(ctx)
 
-		start := time.Now()
-		recorder := httpmiddleware.NewStatusRecorder(w)
-		r, requestID := httpmiddleware.EnsureRequestID(recorder, r, start)
-		next.ServeHTTP(recorder, r)
-
-		logger.FromContext(r.Context()).Info("http request completed",
-			zap.String("module", "http"),
-			zap.String("request_id", requestID),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.Int("status", recorder.Status()),
-			zap.Float64("latency_ms", float64(time.Since(start).Microseconds())/1000),
-			zap.String("client_ip", r.RemoteAddr),
-		)
+		logged.ServeHTTP(w, r)
 	})
 }
 

@@ -20,6 +20,8 @@ type requestIDContextKey struct{}
 var requestIDCounter uint64
 
 type RecoveryFields func(*http.Request) []zap.Field
+type RequestPreparer func(http.ResponseWriter, *http.Request, time.Time) *http.Request
+type RequestLogFields func(*http.Request, int, time.Duration) []zap.Field
 
 type StatusRecorder struct {
 	http.ResponseWriter
@@ -67,6 +69,40 @@ func Recovery(next http.Handler, fields RecoveryFields) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func Logging(next http.Handler, prepare RequestPreparer, fields RequestLogFields) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := NewStatusRecorder(w)
+		if prepare != nil {
+			r = prepare(recorder, r, start)
+		}
+
+		next.ServeHTTP(recorder, r)
+
+		latency := time.Since(start)
+		logFields := []zap.Field{
+			zap.Int("status", recorder.Status()),
+			zap.Float64("latency_ms", float64(latency.Microseconds())/1000),
+		}
+		if fields != nil {
+			logFields = append(fields(r, recorder.Status(), latency), logFields...)
+		}
+		logger.FromContext(r.Context()).Info("http request completed", logFields...)
+	})
+}
+
+func RequestMetadataFields(r *http.Request, requestID string) []zap.Field {
+	fields := []zap.Field{
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("client_ip", r.RemoteAddr),
+	}
+	if requestID != "" {
+		fields = append([]zap.Field{zap.String("request_id", requestID)}, fields...)
+	}
+	return fields
 }
 
 func WriteErrorJSON(w http.ResponseWriter, status int) {
