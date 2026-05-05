@@ -55,7 +55,7 @@ server-probe/server-web stdout → Fluent Bit → Elasticsearch → Kibana
 
 ## 快速开始
 
-### 方式一：Docker Compose 一键启动（生产/完整部署）
+### 方式一：Docker Compose 一键启动（本机完整部署）
 
 ```bash
 make docker-up
@@ -65,6 +65,8 @@ make docker-up
 
 说明：
 - `server-web` 容器会同时托管前端静态文件
+- Docker Compose 默认只绑定宿主机 `127.0.0.1`，并开启 `server-web` 鉴权
+- 监控大屏默认管理员账号为 `admin`，默认密码为 `server-monitor-local-admin`
 - Grafana 地址为 <http://localhost:3000>，默认账号为 `admin`，默认密码为 `server-monitor-local-grafana`
 - Kibana 地址为 <http://localhost:5601>，用于查询 `sm-logs-*` 日志索引
 - 首次启动后，Prometheus 抓取和告警规则加载通常需要 `15-30` 秒
@@ -104,14 +106,14 @@ make docker-up
 
 建议按下面顺序检查：
 
-1. 打开 <http://localhost:8080>，确认前端页面可以访问。
+1. 打开 <http://localhost:8080>，确认前端页面可以访问，并使用 `admin` / `server-monitor-local-admin` 登录。
 2. 打开 <http://localhost:8080/healthz>，确认返回 `healthy: true`。
 3. 打开 <http://localhost:8080/readyz>，确认 `prometheus` 和 `redis` 最终变为 `ok`。
 4. 打开 <http://localhost:9091/targets>，确认 `server-probe` target 为 `UP`。
 5. 打开 <http://localhost:3000>，使用 `admin` / `server-monitor-local-grafana` 登录，确认 Prometheus 数据源和 `Server Monitor Overview` 大盘已自动加载。
-6. 打开 <http://localhost:8080/api/v1/hosts>，确认能返回主机指标 JSON。
-7. 打开 <http://localhost:8080/api/v1/alerts/active>，确认接口可访问，即使当前没有活跃告警。
-8. 打开 <http://localhost:8080/api/v1/alerts/events>，确认最近事件接口可访问。
+6. 登录后打开主机列表页面，确认能返回主机指标。
+7. 登录后打开活跃告警页面，确认接口可访问，即使当前没有活跃告警。
+8. 登录后打开最近告警事件页面，确认最近事件接口可访问。
 9. 打开 <http://localhost:5601>，创建 Data View：`sm-logs-*`，时间字段选择 `@timestamp`。
 10. 访问 <http://localhost:8080/healthz> 后，在 Kibana Discover 中按 `service: server-web` 或 `path: /healthz` 查询请求日志。
 11. 打开 <http://localhost:3000> 的 `Server Monitor Overview`，确认 `Log Volume` 和 `Warning and Error Logs` 面板已加载。
@@ -399,6 +401,10 @@ server-monitor/
 | `REDIS_ADDR`              | (空)                      | Redis 地址    |
 | `REDIS_PASSWORD`          | (空)                      | Redis 密码    |
 | `REDIS_DB`                | `0`                      | Redis 数据库   |
+| `JWT_SECRET`              | (空)                      | JWT 签名密钥，开启鉴权时至少 32 字节 |
+| `JWT_EXPIRE_HOURS`        | `24`                     | JWT 有效期（小时） |
+| `AUTH_ENABLED`            | `true`                   | 是否启用登录鉴权 |
+| `ADMIN_PASSWORD`          | (空)                      | 初始管理员密码 |
 | `CORS_ALLOWED_ORIGINS`    | (空)                      | 允许跨域来源，多个用逗号分隔 |
 | `RATE_LIMIT_ENABLED`      | `false`                  | 是否启用 Redis 滑动窗口限流 |
 | `RATE_LIMIT_REQUESTS`     | `120`                    | 限流窗口内允许的请求数 |
@@ -429,7 +435,7 @@ server-monitor/
 
 补充说明：
 - Docker Compose 部署时，`server-web` 镜像内默认使用 `STATIC_DIR=/app/static`
-- Docker Compose 本地部署默认使用 `REDIS_PASSWORD=server-monitor-local-redis`，生产环境必须通过环境变量覆盖
+- Docker Compose 本地部署默认只绑定 `127.0.0.1`，并使用 `AUTH_ENABLED=true`、`ADMIN_PASSWORD=server-monitor-local-admin`、`REDIS_PASSWORD=server-monitor-local-redis`，生产环境必须通过环境变量覆盖默认密码和密钥
 - K8s / Helm 部署默认使用 `monitor-secret` 注入 `REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`JWT_SECRET`、`ADMIN_PASSWORD`、`GRAFANA_ADMIN_USER`、`GRAFANA_ADMIN_PASSWORD`，生产环境必须替换 Secret 中的默认密码和密钥
 - Redis 生产环境建议在宿主机开启 `vm.overcommit_memory=1`，否则 Redis 可能在后台保存或内存紧张时输出 warning 并存在失败风险
 - 本地开发模式通常不设置 `STATIC_DIR`，由 Vite 开发服务器在 `5173` 端口提供前端页面

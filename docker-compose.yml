@@ -99,7 +99,7 @@ services:
     build: ./server-probe
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     environment:
       LISTEN_ADDR: ":9090"
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -127,7 +127,7 @@ services:
     image: prom/prometheus:v2.51.0
     restart: unless-stopped
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docker/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
@@ -282,7 +282,7 @@ services:
     image: prom/alertmanager:v0.27.0
     restart: unless-stopped
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     command:
@@ -306,7 +306,7 @@ services:
     image: grafana/grafana:10.4.0
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-server-monitor-local-grafana}
@@ -438,7 +438,7 @@ services:
       dockerfile: server-web/Dockerfile
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       PROMETHEUS_RELOAD_URL: http://prometheus:9090/-/reload
@@ -454,8 +454,8 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-server-monitor-local-mysql}
       JWT_SECRET: ${JWT_SECRET:-server-monitor-local-dev-jwt-secret-change-me}
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
-      AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-server-monitor-local-admin}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_REQUESTS: "120"
