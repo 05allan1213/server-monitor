@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -43,6 +44,10 @@ type Config struct {
 	MySQLDatabase                   string
 	MySQLStartupTimeout             time.Duration
 	MySQLPingTimeout                time.Duration
+	JWTSecret                       string
+	JWTExpireHours                  int
+	AuthEnabled                     bool
+	AdminPassword                   string
 	StaticDir                       string
 	TraceOTLPEndpoint               string
 	TraceSampleRate                 float64
@@ -98,11 +103,22 @@ func Load() Config {
 		MySQLDatabase:        getEnv("MYSQL_DATABASE", ""),
 		MySQLStartupTimeout:  getEnvDurationSeconds("MYSQL_STARTUP_TIMEOUT_SECONDS", 5),
 		MySQLPingTimeout:     getEnvDurationSeconds("MYSQL_PING_TIMEOUT_SECONDS", 3),
+		JWTSecret:            getEnv("JWT_SECRET", ""),
+		JWTExpireHours:       getEnvPositiveInt("JWT_EXPIRE_HOURS", 24),
+		AuthEnabled:          getEnvBool("AUTH_ENABLED", true),
+		AdminPassword:        getEnv("ADMIN_PASSWORD", ""),
 		StaticDir:            getEnv("STATIC_DIR", ""),
 		TraceOTLPEndpoint:    getEnvNonEmpty("TRACE_OTLP_ENDPOINT", ""),
 		TraceSampleRate:      getEnvFloatRange("TRACE_SAMPLE_RATE", 1.0, 0, 1),
 		KafkaBrokers:         getEnvList("KAFKA_BROKERS"),
 	}
+}
+
+func (c Config) Validate() error {
+	if c.AuthEnabled && len(strings.TrimSpace(c.JWTSecret)) < 32 {
+		return fmt.Errorf("JWT_SECRET must be at least 32 bytes when auth is enabled, got %d", len(strings.TrimSpace(c.JWTSecret)))
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {

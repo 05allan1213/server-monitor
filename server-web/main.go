@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"server-web/api"
+	authpkg "server-web/auth"
 	"server-web/config"
 	"server-web/database"
 	eventbus "server-web/kafka"
@@ -39,6 +41,10 @@ func main() {
 	defer logger.Sync(log)
 
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		zap.L().Error("invalid config", zap.Error(err))
+		os.Exit(1)
+	}
 	shutdownTracer, err := tracer.Init(context.Background(), tracer.Config{
 		ServiceName:  "server-web",
 		OTLPEndpoint: cfg.TraceOTLPEndpoint,
@@ -99,6 +105,26 @@ func main() {
 			)
 			os.Exit(1)
 		}
+	}
+
+	var authService *authpkg.Service
+	if mysqlClient != nil && len(strings.TrimSpace(cfg.JWTSecret)) >= 32 {
+		authService, err = authpkg.NewService(mysqlClient.DB(), cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
+		if err != nil {
+			zap.L().Error("auth service init failed", zap.Error(err))
+			os.Exit(1)
+		}
+		created, err := authService.EnsureInitialAdmin(context.Background(), cfg.AdminPassword)
+		if err != nil {
+			zap.L().Error("initial admin setup failed", zap.Error(err))
+			os.Exit(1)
+		}
+		if created {
+			zap.L().Info("initial admin user created", zap.String("username", "admin"))
+		}
+	}
+
+	if mysqlClient != nil {
 		zap.L().Info("mysql initialized",
 			zap.String("host", cfg.MySQLHost),
 			zap.String("port", cfg.MySQLPort),
@@ -161,7 +187,7 @@ func main() {
 
 	go broadcastHosts(ctx, prometheusClient, websocketHub, cfg.RequestTimeout, cfg.HostsBroadcastInterval)
 
-	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, websocketHub, kafkaProducer)
+	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, authService, websocketHub, kafkaProducer)
 	if err != nil {
 		zap.L().Error("create router failed", zap.Error(err))
 		os.Exit(1)

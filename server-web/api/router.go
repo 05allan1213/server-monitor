@@ -11,6 +11,7 @@ import (
 
 	"server-web/api/handlers"
 	"server-web/api/middleware"
+	authpkg "server-web/auth"
 	"server-web/config"
 	"server-web/database"
 	eventbus "server-web/kafka"
@@ -19,7 +20,7 @@ import (
 	ws "server-web/websocket"
 )
 
-func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, mysqlClient *database.MySQL, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
+func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *rediscache.Client, mysqlClient *database.MySQL, authService *authpkg.Service, websocketHub *ws.Hub, alertProducer *eventbus.Producer) (*gin.Engine, error) {
 	router := gin.New()
 	metrics := middleware.NewMetrics()
 	if websocketHub != nil {
@@ -50,6 +51,7 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 		CacheTimeout:   cfg.CacheWriteTimeout,
 		AlertProducer:  alertProducer,
 		MySQLClient:    mysqlClient,
+		AuthService:    authService,
 	}, websocketHub)
 	if err != nil {
 		return nil, err
@@ -58,6 +60,8 @@ func NewRouter(cfg config.Config, promClient *promclient.Client, cacheClient *re
 	router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 	router.GET("/healthz", handler.Healthz)
 	router.GET("/readyz", handler.Readyz)
+	router.POST("/api/v1/auth/login", handler.Login)
+	router.GET("/api/v1/auth/me", handler.Me)
 	router.GET("/api/v1/hosts", handler.Hosts)
 	router.GET("/api/v1/hosts/:instance/metrics", handler.HostMetrics)
 	router.GET("/api/v1/dashboard/overview", handler.DashboardOverview)

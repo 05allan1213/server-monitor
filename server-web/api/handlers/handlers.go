@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	authpkg "server-web/auth"
 	eventbus "server-web/kafka"
 	"server-web/logger"
 	promclient "server-web/prometheus"
@@ -22,6 +23,11 @@ import (
 	"server-web/webhook"
 	ws "server-web/websocket"
 )
+
+type authService interface {
+	Login(ctx context.Context, username string, password string) (authpkg.LoginResult, error)
+	AuthenticateBearer(authHeader string) (authpkg.Identity, error)
+}
 
 type cacheClient interface {
 	Enabled() bool
@@ -49,6 +55,7 @@ type Handler struct {
 	promClient     *promclient.Client
 	cacheClient    cacheClient
 	mysqlClient    mysqlClient
+	authService    authService
 	alertProducer  alertProducer
 	readyTimeout   time.Duration
 	requestTimeout time.Duration
@@ -157,6 +164,7 @@ type Config struct {
 	CacheTimeout   time.Duration
 	AlertProducer  alertProducer
 	MySQLClient    mysqlClient
+	AuthService    authService
 }
 
 func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Config, websocketHub *ws.Hub) (*Handler, error) {
@@ -167,6 +175,7 @@ func NewHandler(promClient *promclient.Client, cacheClient cacheClient, cfg Conf
 		promClient:     promClient,
 		cacheClient:    cacheClient,
 		mysqlClient:    cfg.MySQLClient,
+		authService:    cfg.AuthService,
 		alertProducer:  cfg.AlertProducer,
 		readyTimeout:   cfg.ReadyTimeout,
 		requestTimeout: cfg.RequestTimeout,

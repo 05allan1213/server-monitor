@@ -422,6 +422,10 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-server_monitor}
       MYSQL_USER: ${MYSQL_USER:-server_monitor}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-server-monitor-local-mysql}
+      JWT_SECRET: ${JWT_SECRET:-server-monitor-local-dev-jwt-secret-change-me}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_REQUESTS: "120"
