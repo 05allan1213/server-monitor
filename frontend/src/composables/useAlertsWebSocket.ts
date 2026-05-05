@@ -1,18 +1,26 @@
 import { onBeforeUnmount, ref } from "vue";
 
 import type { AlertEvent, AlertRecord, Host } from "../types";
+import { getStoredToken } from "../api/authStorage";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
 const websocketBaseUrl = import.meta.env.VITE_WS_BASE_URL ?? "";
 
 function buildWebSocketUrl() {
+  let base: string;
   if (websocketBaseUrl) {
-    return `${websocketBaseUrl}/ws/alerts`;
+    base = `${websocketBaseUrl}/ws/alerts`;
+  } else {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    base = `${protocol}//${window.location.host}/ws/alerts`;
   }
 
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/alerts`;
+  const token = getStoredToken();
+  if (token) {
+    return `${base}?token=${encodeURIComponent(token)}`;
+  }
+  return base;
 }
 
 function isValidAlertEvent(data: unknown): data is AlertEvent {

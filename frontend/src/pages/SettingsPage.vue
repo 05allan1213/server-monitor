@@ -16,6 +16,10 @@
         <span class="item-title">通知渠道</span>
         <span class="item-desc">维护 Webhook 通知地址，并执行受限连通性测试。</span>
       </RouterLink>
+      <RouterLink class="settings-item" to="/settings/users">
+        <span class="item-title">用户管理</span>
+        <span class="item-desc">管理系统用户和角色分配。</span>
+      </RouterLink>
     </div>
   </section>
 </template>
