@@ -418,7 +418,7 @@ services:
       elasticsearch-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2020/api/v1/health || exit 1"]
+      test: ["CMD", "/fluent-bit/bin/fluent-bit", "--version"]
       interval: 10s
       timeout: 3s
       retries: 10
