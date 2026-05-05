@@ -19,7 +19,10 @@ require (
 	golang.org/x/crypto v0.50.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
+	server-monitor/pkg v0.0.0
 )
+
+replace server-monitor/pkg => ../pkg
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0 // indirect

@@ -22,7 +22,8 @@ import (
 	"server-probe/collector"
 	"server-probe/config"
 	"server-probe/logger"
-	"server-probe/tracer"
+
+	"server-monitor/pkg/tracer"
 )
 
 const requestIDHeader = "X-Request-ID"

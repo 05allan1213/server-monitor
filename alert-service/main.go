@@ -21,7 +21,8 @@ import (
 	"alert-service/logger"
 	servicemetrics "alert-service/metrics"
 	redisstore "alert-service/redis"
-	"alert-service/tracer"
+
+	"server-monitor/pkg/tracer"
 )
 
 const (

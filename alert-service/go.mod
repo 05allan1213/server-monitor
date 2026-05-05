@@ -11,7 +11,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	go.uber.org/zap v1.27.0
+	server-monitor/pkg v0.0.0
 )
+
+replace server-monitor/pkg => ../pkg
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0 // indirect

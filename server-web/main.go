@@ -23,8 +23,9 @@ import (
 	promclient "server-web/prometheus"
 	"server-web/pubsub"
 	rediscache "server-web/redis"
-	"server-web/tracer"
 	ws "server-web/websocket"
+
+	"server-monitor/pkg/tracer"
 )
 
 type wsMessage struct {

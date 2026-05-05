@@ -148,7 +148,7 @@ func (c *Client) AllowSlidingWindow(ctx context.Context, key string, limit int64
 	windowStart := now.Add(-window).UnixNano()
 
 	pipe := c.client.TxPipeline()
-	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart, 10))
+	pipe.ZRemRangeByScore(ctx, key, "0", "("+strconv.FormatInt(windowStart, 10))
 	pipe.ZAdd(ctx, key, redis.Z{
 		Score:  float64(nowUnixNano),
 		Member: newRateLimitMember(nowUnixNano),
