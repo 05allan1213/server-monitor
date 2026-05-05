@@ -1,3 +1,12 @@
+// @title           Server Monitor API
+// @version         1.0
+// @description     服务器监控平台 API，提供主机监控、告警管理、规则配置等功能。
+// @host             localhost:8080
+// @BasePath         /api/v1
+// @schemes          http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 package main
 
 import (
@@ -25,6 +34,7 @@ import (
 	ws "server-web/websocket"
 
 	"server-monitor/pkg/logger"
+	"server-monitor/pkg/shutdown"
 	"server-monitor/pkg/tracer"
 )
 
@@ -110,7 +120,7 @@ func initApp(ctx context.Context) (*app, error) {
 
 	kafkaProducer := initKafkaProducer(cfg)
 	alertHub := pubsub.NewHub(64)
-	websocketHub := ws.NewHub(cfg.CORSOrigins)
+	websocketHub := ws.NewHub(cfg.WSMaxConnections, cfg.CORSOrigins)
 
 	router, err := api.NewRouter(cfg, prometheusClient, redisClient, mysqlClient, authService, websocketHub, kafkaProducer)
 	if err != nil {
@@ -288,35 +298,31 @@ func startBackgroundTasks(app *app) {
 func shutdownApp(app *app) {
 	zap.L().Info("server-web shutting down")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
-	if err := app.server.Shutdown(shutdownCtx); err != nil {
-		zap.L().Error("server-web shutdown error", zap.Error(err))
-	}
-	shutdownCancel()
-
-	traceShutdownCtx, traceShutdownCancel := context.WithTimeout(context.Background(), app.cfg.ShutdownTimeout)
-	if err := app.shutdownTracer(traceShutdownCtx); err != nil {
-		zap.L().Warn("tracer shutdown failed", zap.Error(err))
-	}
-	traceShutdownCancel()
+	shutdown.Graceful(app.cfg.ShutdownTimeout, []shutdown.Phase{
+		{Name: "http-server", Fn: func(ctx context.Context) error { return app.server.Shutdown(ctx) }},
+		{Name: "tracer", Fn: app.shutdownTracer},
+	})
 
 	app.cancel()
 	if app.subscriberDone != nil {
 		<-app.subscriberDone
 	}
-	if err := app.redisClient.Close(); err != nil {
-		zap.L().Error("redis close failed", zap.Error(err))
-	}
-	if app.mysqlClient != nil {
-		if err := app.mysqlClient.Close(); err != nil {
-			zap.L().Error("mysql close failed", zap.Error(err))
-		}
-	}
-	if app.kafkaProducer != nil {
-		if err := app.kafkaProducer.Close(); err != nil {
-			zap.L().Warn("kafka producer close failed", zap.Error(err))
-		}
-	}
+
+	shutdown.Graceful(app.cfg.ShutdownTimeout, []shutdown.Phase{
+		{Name: "redis", Fn: func(ctx context.Context) error { return app.redisClient.Close() }},
+		{Name: "mysql", Fn: func(ctx context.Context) error {
+			if app.mysqlClient != nil {
+				return app.mysqlClient.Close()
+			}
+			return nil
+		}},
+		{Name: "kafka-producer", Fn: func(ctx context.Context) error {
+			if app.kafkaProducer != nil {
+				return app.kafkaProducer.Close()
+			}
+			return nil
+		}},
+	})
 
 	app.alertHub.Close()
 	if app.alertHubConsumers != nil {

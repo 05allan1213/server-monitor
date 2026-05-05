@@ -23,32 +23,39 @@ const (
 var (
 	ErrHubClosed       = errors.New("websocket hub is shutting down")
 	ErrRegisterChannel = errors.New("websocket register channel is full")
+	ErrMaxConnections  = errors.New("websocket max connections reached")
 )
 
 type Hub struct {
-	clients    map[*Client]bool
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan []byte
-	done       chan struct{}
-	once       sync.Once
-	observerMu sync.RWMutex
-	observer   func(int)
-	upgrader   websocket.Upgrader
+	clients        map[*Client]bool
+	register       chan *Client
+	unregister     chan *Client
+	broadcast      chan []byte
+	done           chan struct{}
+	once           sync.Once
+	observerMu     sync.RWMutex
+	observer       func(int)
+	upgrader       websocket.Upgrader
+	maxConnections int
 }
 
-func NewHub(allowedOrigins ...[]string) *Hub {
+func NewHub(maxConnections int, allowedOrigins ...[]string) *Hub {
 	origins := mapAllowedOrigins(nil)
 	if len(allowedOrigins) > 0 {
 		origins = mapAllowedOrigins(allowedOrigins[0])
 	}
 
+	if maxConnections <= 0 {
+		maxConnections = 1000
+	}
+
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		register:   make(chan *Client, 16),
-		unregister: make(chan *Client, 64),
-		broadcast:  make(chan []byte, 64),
-		done:       make(chan struct{}),
+		clients:        make(map[*Client]bool),
+		register:       make(chan *Client, 16),
+		unregister:     make(chan *Client, 64),
+		broadcast:      make(chan []byte, 64),
+		done:           make(chan struct{}),
+		maxConnections: maxConnections,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return isOriginAllowed(r, origins)
@@ -72,6 +79,14 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case client := <-h.register:
+			if h.maxConnections > 0 && len(h.clients) >= h.maxConnections {
+				close(client.send)
+				zap.L().Warn("websocket hub max connections reached, rejecting new connection",
+					zap.Int("current", len(h.clients)),
+					zap.Int("max", h.maxConnections),
+				)
+				break
+			}
 			h.clients[client] = true
 			h.observeConnections()
 		case client := <-h.unregister:
@@ -158,6 +173,10 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	case <-h.done:
 		return ErrHubClosed
 	default:
+	}
+
+	if h.maxConnections > 0 && len(h.clients) >= h.maxConnections {
+		return ErrMaxConnections
 	}
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
