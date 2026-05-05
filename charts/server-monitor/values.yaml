@@ -28,7 +28,12 @@ config:
 secret:
   create: true
   name: monitor-secret
+  # 以下默认值仅用于本地/学习环境，生产环境必须通过 values 覆盖或使用外部 Secret。
   redisPassword: server-monitor-change-me
+  mysqlPassword: server-monitor-change-me
+  mysqlRootPassword: server-monitor-change-me
+  jwtSecret: server-monitor-dev-jwt-secret-change-me
+  adminPassword: server-monitor-change-me
   grafanaAdminUser: admin
   grafanaAdminPassword: server-monitor-change-me
 
